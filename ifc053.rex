@@ -14,7 +14,7 @@
 /* IFCID 58 is reported only if started with the corresponding pair   */
 /*       IFCID 59-66 is started (Read DSNWMSGS for more information)  */
 /**********************************************************************/
-arg  ssid numtimes sleeptime ifcids
+arg  ssid numtimes sleeptime  modex
 numeric digits 25
 first=1
  
@@ -364,7 +364,8 @@ QW0053:
        /* Check with new release ... */
        sqlcode  =x2d(c2x(SUBSTR(Rec,offsetd+74,4)),8)
        /* ignore "normal" sqlcode */
-       if sqlcode >= 0 ! sqlcode = -811 ! sqlcode = -803
+       if modex = 'NEG' &,
+          sqlcode >= 0 ! sqlcode = -811 ! sqlcode = -803
           then return
        reco=reco+1
        say ' '
@@ -378,26 +379,50 @@ QW0053:
        /* Package name */
        QW0053PN =strip(SUBSTR(Rec,offsetd,18))
        say  'Collid:'QW0053PC'/Pack:'QW0053pn
-       /*
+ 
        offsetd = offsetd +28
        /* Consitency token (Contoken in sysibm.syspackstmt) */
        /* PRECOMPILER TIME STAMP */
-       /* SQLCA  /
+       /* SQLCA */
        QW0053SQ =    SUBSTR(Rec,offsetd,136)
+       offsetd= offsetd +136
        say '053/SQLCA 1-50           >'!! substr(QW0053sq,1,50)!!'<'
        say '053/SQLCA 51-100         >'!! substr(QW0053sq,51,50)!!'<'
        say '053/SQLCA 101-136        >'!! substr(QW0053sq,101,36)!!'<'
        say '053/SQLCA 101-136        >'!! substr(QW0053sq,101,36)!!'<'
-       */
-       /* jump to SQLCODE from sqlca */
-       offsetd = offsetd +12
-       /* sqlcode is in sqlca -look dsntiac for sqlca description*/
-       /* sqlcode  =x2d(c2x(SUBSTR(Rec,offsetd,4)),8) */
-       offsetd= offsetd +126 */
  
-       offsetd= offsetd +166
+       /* jump to SQLCODE from sqlca */
+       /************** BEGIN SQLCA PROCESSING ****************/
+       offsetx = offsetd +12
+       /* sqlcode is in sqlca -look dsntiac for sqlca description*/
+       nsqlcode  =x2d(c2x(SUBSTR(Rec,offsetx,4)),3)
+         /* interpreter sqlcode
+            sqlcodehex=FFFFFCDB
+            haha=x2d(sqlcodehex,3) */
+         /* On sait que sqlcode sera au max sur 3 positions */
+ 
+       offsetx= offsetx +84
+       sqlerrd1  =c2x(SUBSTR(Rec,offsetx,4))
+       offsetx= offsetx + 4
+       sqlerrd2  =c2x(SUBSTR(Rec,offsetx,4))
+       offsetx= offsetx + 4
+       sqlerrd3  =c2x(SUBSTR(Rec,offsetx,4))
+       offsetx= offsetx + 4
+       sqlerrd4  =c2x(SUBSTR(Rec,offsetx,4))
+       offsetx= offsetx + 4
+       sqlerrd5  =c2x(SUBSTR(Rec,offsetx,4))
+       offsetx= offsetx + 4
+       sqlerrd6  =c2x(SUBSTR(Rec,offsetx,4))
+       offsetx= offsetx + 4
+       say 'nsqlcode' nsqlcode
+       say sqlerrd1'/'sqlerrd2'/'sqlerrd3'/'sqlerrd4'/'sqlerrd5'/',
+           sqlerrd6
+       /**************** END SQLCA PROCESSING ****************/
+       offsetd= offsetd + 2
        /* Statement number  */
        QW0053SN = c2d(SUBSTR(Rec,offsetd,4))
+       say 'offsetd' offsetd
+       say substr(rec,offsetd,50)
        offsetd= offsetd +26
        /* SQL Type */
        /* Not meaningful when Sql not executed (-805, -501) */
@@ -406,13 +431,13 @@ QW0053:
            when QW0053TOS = '01'  then sqltype='FETCH'
            when QW0053TOS = '10'  then sqltype='INSERT'
            when QW0053TOS = '11'  then sqltype='SELECT INTO'
-           when QW0053TOS = '20'  then sqltype='UPDATE NONCURSOR'
+           when QW0053TOS = '20'  then sqltype='UPDATE NO CURSOR'
            when QW0053TOS = '21'  then sqltype='UPDATE CURSOR'
            when QW0053TOS = '30'  then sqltype='MERGE'
-           when QW0053TOS = '40'  then sqltype='DELETE NONCURSOR'
+           when QW0053TOS = '40'  then sqltype='DELETE NO CURSOR'
            when QW0053TOS = '41'  then sqltype='DELETE CURSOR'
            when QW0053TOS = '50'  then sqltype='TRUNCATE'
-           when QW0053TOS = '80'  then sqltype='PREPARE NONCURSOR'
+           when QW0053TOS = '80'  then sqltype='PREPARE NO CURSOR'
            when QW0053TOS = '81'  then sqltype='PREPARE CURSOR'
            when QW0053TOS = '91'  then sqltype='OPEN'
            when QW0053TOS = 'A1'  then sqltype='CLOSE'
