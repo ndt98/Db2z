@@ -380,7 +380,7 @@ GDB2INFO:
  ADDRESS TSO "DSN SYSTEM("NDB2")"
  ADSN_COD=RC
  X=OUTTRAP(OFF)
- 
+
  IF ADSN_COD>0 THEN DO
       TAB.ADSN_SSID.14="NODDF"
       TAB.ADSN_SSID.5="ON"
@@ -422,7 +422,7 @@ GDB2INFO:
   TAB.ADSN_SSID.15=WORD(TAB.ADSN_SSID.15,2)
   TAB.ADSN_SSID.5="ON"
  END     /* COMMANDE DDF OK                IF 01 : DB2    */
- 
+
  /***************************************/
  /* Display GBP seulement pour GBP1 LCL */
  /***************************************/
@@ -572,7 +572,7 @@ JU004:
   /* delete pour eviter pb d'espace dans systmp */
   ADDRESS TSO "DELETE '"BSDSOUT1"'"
   X=OUTTRAP(OFF)
-  /* Init. variables */ 
+  /* Init. variables */
   CATNAME=""
   DataSharingMode=""
   DTSHRGP=""
@@ -895,9 +895,9 @@ process_sms2:
                 CPTLOG=CPTLOG+1;LOG.CPTLOG="SCAN DU VOLUME "VOLUME
                 SAY TIME()" "LOG.CPTLOG
                 LSTVLSC=LSTVLSC" "VOLUME
- 
+
                 call info_space
- 
+
                END  /* fonction scan volume */
               END
              END
@@ -1053,9 +1053,9 @@ process_sms:
                 CPTLOG=CPTLOG+1;LOG.CPTLOG="SCAN DU VOLUME "VOLUME
                 SAY TIME()" "LOG.CPTLOG
                 LSTVLSC=LSTVLSC" "VOLUME
- 
+
                 call info_space
- 
+
                END  /* fonction scan volume */
               END
              END
@@ -1112,7 +1112,7 @@ process_sms:
      SAY TIME()" "LOG.CPTLOG
     END
  return
- 
+
 SDSF:
 ARG JOBNAME PARM
  /* si dbm1 on ne prend que les 1000 premieres lignes */
@@ -1122,7 +1122,7 @@ ARG JOBNAME PARM
     dbm1=1
  end
  say 'SDSF searching output for job:' jobname
- 
+
  RC=ISFCALLS('ON')
  ISFPREFIX=jobname
  ISFOWNER="*"
@@ -1151,7 +1151,7 @@ ARG JOBNAME PARM
       /* The isfmsg variable contains a short message */
       /************************************************/
           Say  isfmsg
- 
+
            /****************************************************/
            /* The isfmsg2 stem contains additional descriptive */
            /* error messages                                   */
@@ -1252,7 +1252,7 @@ do
       CPT=CONSMSX.0
       CPT=CPT+1;CONSMSX.0=CPT
       CONSMSX.CPT='  '!! VOLUME !! ' %USED = ' format(PerUsedx,5,2)
- 
+
 end
 else do
       X=OUTTRAP(TMP.)
@@ -1301,7 +1301,7 @@ process_ju004:
        /* on arrete la lecture si copy 2*/
        FlagLogActive=1
     END
-    
+
     /* Format V11 */
     WHEN FlagLogActive & SUBSTR(WORD(TAMP,4),1,4)='DSN=' THEN
     DO
@@ -1309,18 +1309,18 @@ process_ju004:
        LSTACTLG=LSTACTLG" "WORD(SUBSTR(WORD(TAMP,4),5,44),1)
        call DiffRBA  /* calcul de la taille active log */
     END
- 
+
     /*------------------------------*/
     /*     Traitement Archive Logs  */
     /*------------------------------*/
- 
+
     WHEN WORD(TAMP,1)='ARCHIVE' & WORD(TAMP,2)='LOG' &,
           WORD(TAMP,3)='COPY' then
     DO
        FlagLogActive=0
        TypeArchLog=WORD(TAMP,4) /* archive 1 ou 2 */
-       If TypeArchLog = 2 then return /* Arret traitement si Archive 2 */ 
-       IF TypeArchLog=1 then 
+       If TypeArchLog = 2 then return /* Arret traitement si Archive 2 */
+       IF TypeArchLog=1 then
        DO
          NbArch=0
          LSTSCAR=''
@@ -1334,24 +1334,24 @@ process_ju004:
          DateFirstArch='' /* Premiere archive */
        END /* End TypeArchLog = 1 */
     END /* End ligne Demarrage section Archive 1 ou 2 */
- 
+
     WHEN TypeArchLog=1 & TypeActiveLog=1 THEN
     DO
        /* On est dans la lecture Archive */
        SELECT
         /* on retient le nom de l'archive pour donner l'info UNIT */
-        
- 
-        WHEN SUBSTR(WORD(TAMP,4),1,4)='DSN=' then 
+
+
+        WHEN SUBSTR(WORD(TAMP,4),1,4)='DSN=' then
         Do /* v11 - a optimiser car fait tout le temps */
              DsnArchive= SUBSTR(WORD(TAMP,4),5,44)
         End
- 
+
         /*------------------------------*/
         /* cas des membres data sharing */
         /*----------------------------- */
-        
- 
+
+
         WHEN substr(WORD(TAMP,4),1,4)='VOL=' THEN    /*v11 nfm */
         DO
            L=L+1
@@ -1359,38 +1359,38 @@ process_ju004:
            TAMP=SUBSTR(TAMP,2,132)
 	         Call ProcessArchLine
         END
- 
- 
+
+
         /*----------------- */
         /* Non Data Sharing */
         /*------------------*/
         /* La seule difference c'est que l'info date est sur la meme*/
         /* ligne que la ligne PASSWORD car on n'a pas le LSRN */
- 
-        
- 
+
+
+
         WHEN substr(WORD(TAMP,6),1,4)='VOL=' THEN    /*     v11 nfm */
         DO
            Call ProcessArchLine
         END
- 
+
         OTHERWISE
- 
+
        END /* End Select */
- 
+
     END /* End WHEN TypeArchLog=1 & TypeActiveLog=1 */
- 
-   
+
+
     WHEN DataSharingMode="OFF" &, /*  v11 NFM */
         TypeActiveLog=1 & TypeArchLog=0 &,
         SUBSTR(WORD(TAMP,6),1,7)="STATUS=" then
     DO
-    * on compte le nombre d'active log */
+    /* on compte le nombre d'active log */
        NbActLog=NbActLog+1
  		END
     END
- 
-   
+
+
     WHEN DataSharingMode="ON" &, /* V11 NFM Absence de PASSWORD=*/
         TypeActiveLog=1 & TypeArchLog=0 &,
         SUBSTR(WORD(TAMP,4),1,7)='STATUS=' then
@@ -1400,9 +1400,9 @@ process_ju004:
        TAMP=SUBSTR(TAMP,2,132)
        NbActLog=NbActLog+1
     END
- 
+
     OTHERWISE
- 
+
    END    /* End Select */
 return
 init_MsgAlerte:
@@ -1785,17 +1785,17 @@ mstr_ok:
    /* Datej & Prevd = Do not have 0 , must add 0 for comparison */
    DateJ=AddZero(DateJ)     /* ex : 01 DEC 2017 */
    PrevD=AddZero(PrevD)
- 
+
    /* chargement variable MsgAlerte */
    call init_MsgAlerte
    /* traitement ligne par ligne mstr */
    SDSNEXIT=''
- 
+
    /********************/
    /* Scan sysout MSTR */
    /********************/
    call process_mstr
- 
+
    /*****************************************/
    /* display valeur MaxArcDur for this DB2 */
    /*****************************************/
@@ -1852,7 +1852,7 @@ dbm1_ok:
    CPTLOG=CPTLOG+1
    LOG.CPTLOG="LECTURE DE LA SYSOUT "NDB2"DBM1."
    SAY TIME()" "LOG.CPTLOG SDF.0 "LINES TO PROCESS"
- 
+
    /* traitement ligne  ligne */
    TICTOC=''
    call process_dbm1
@@ -1865,7 +1865,7 @@ irlm_ok:
    CPTLOG=CPTLOG+1
    LOG.CPTLOG="LECTURE DE LA SYSOUT "NDB2"IRLM."
    SAY TIME()" "LOG.CPTLOG SDF.0 "LINES TO PROCESS"
- 
+
    /* traitement ligne  ligne */
    DEADLOK=''
    call process_irlm
@@ -1922,7 +1922,7 @@ LogW:
      "EXECIO 1 DISKW OUFw (FINIS STEM rec. "
      "FREE DD(OUFW)"
     return
- 
+
 LogWm:
 /* Report warning messages , will be sent to Outlook Me */
      oufw = "'" !! hlq !! '.reportsw.' !! 'ALRT' !! "'"
@@ -1956,7 +1956,7 @@ ProcessArchLine:
          DateDebutArch=WORD(TAMP,1) /* Date debut */
          DateFinArch=WORD(TAMP,3) /* Date fin */
          HeureDebutArch=WORD(TAMP,2) /* Heure debut */
-         HeureFinArch=WORD(TAMP,4) /* Heure fin */ 
+         HeureFinArch=WORD(TAMP,4) /* Heure fin */
          NbArch=NbArch+1     /* compteur nbre archives */
          /* Calcul nbre de secondes Debut a partir de la date */
          NbSecDebut=(ConvertDate2NbDays(DateDebutArch)-1)*24*60*60
@@ -2042,7 +2042,7 @@ MyAlarmf:
         SendAlarm=0
    end
    else say 'pas d appel MYALARM pour ' LPAR NDB2
- 
+
 return
 /*-------------------------------------------------------------*/
 /*  Mise en forme date avant appel foncition conversion reelle */
@@ -2137,7 +2137,7 @@ AddZero: procedure
    if length(ddx) = 1 then ddx = '0'ddx
    datexx = ddx word(datexx,2) word(datexx,3)
    return(datexx)
- 
+
 /* Test relance Hors IPL */
 TestRelanceHorsIPL: Procedure expose diplsav
     arg datipl,datsta,datej /* format datsta 19 DEC 2017 21.07.16*/
@@ -2152,7 +2152,7 @@ TestRelanceHorsIPL: Procedure expose diplsav
     /* si le db2 vient de restarter */
     if (ddx = ddy ! (ddy - ddx = 1 & hhx >= 6)) & mmx = mmy then nop
            else return(0)
- 
+
     /* RECUPERE LA DATE D'IPL ET LA FORMAT EN NUM YYYYMMDD  */
     dipx=SUBSTR(WORD(datipl,1),7,4)!!SUBSTR(WORD(datipl,1),1,2)!!,
         SUBSTR(WORD(datipl,1),4,2)
@@ -2165,7 +2165,7 @@ TestRelanceHorsIPL: Procedure expose diplsav
     TIMX=((((TIMXH*60)+TIMXM)*60)+TIMXS)*999/86399         /* SUR 000 */
     dipx=TRUNC(dipx+TIMX) /* DATE D'IPL SUR XXXXXX000 + TIME SUR 000  */
     VARM="JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC" /* VAR MOIS*/
- 
+
     /* RECUPERE LA DATE DE START AU FORMAT EN NUM XXXXXX000  */
     STJ=RIGHT(WORD(datsta,1),2,"0")                        /* JOUR    */
     STM=RIGHT(WORDPOS(WORD(datsta,2),VARM),2,"0")          /* MOIS    */
@@ -2177,7 +2177,7 @@ TestRelanceHorsIPL: Procedure expose diplsav
     STTS=SUBSTR(WORD(datsta,4),6,2)                        /* SECONDE */
     TSTX=((((STTH*60)+STTM)*60)+STTS)*999/86399            /* SUR 000 */
     DSTX=TRUNC(DSTX+TSTX)  /* DATE DE START SUR XXXXXX000+TIME SUR 000*/
- 
+
     DNOW=DATE('B');DNOW=DNOW*1000      /* DATE ACTUELLE SUR XXXXXX000 */
     DateAAJJJ=TIME('S'); DateAAJJJ=DateAAJJJ*999/86399      /* TIME ACTUELLE SUR
 000 */
@@ -2432,7 +2432,7 @@ Erly: procedure expose LstDB2
 /*                                                                   */
 /*-------------------------------------------------------------------*/
    numeric digits 20
- 
+
    psa         = 0     /* psa absolute address                       */
    psa_cvt     = 16    /* psa->cvt ptr offset                        */
    cvt_jesct   = 296   /* cvt->jesct ptr offset                      */
@@ -2454,7 +2454,7 @@ Erly: procedure expose LstDB2
    erly_ssgp = 38      /* ptr to DSN3SSGP (= 0 is subsystem is down) */
    erly_scom = 56      /* ptr to SCOM (subsys communication block)   */
    erly_modn = 84      /* DSN3EPX                                    */
- 
+
    cvt   = c2d(storage(d2x(psa + psa_cvt),4))
    jesct = c2d(storage(d2x(cvt + cvt_jesct),4))
    sscvt = c2d(storage(d2x(jesct + jesct_sscvt),4))
@@ -2484,7 +2484,7 @@ Erly: procedure expose LstDB2
       sscvt = c2d(storage(d2x(sscvt + sscvt_sscvt),4))
    end
 return(0)
- 
+
 ProcessSubsysLogs:
   /********************/
   /* Read sysout MSTR */
@@ -2502,7 +2502,7 @@ ProcessSubsysLogs:
            call  sdsf NDB2"MSTR SKIP"
         end
   end
- 
+
   DATSTA=""; DSBSDS1="";
   DSBSDS2=""; SDSNEXIT=""; PROCLIB=""; ZPARM=""; CMDPRF=""; USERDB2="";
   GRPDB2=""; MODE  =""; CPTENV=0; DataSharingMode=""; DTSHRLT=""; DTSHRGP="";
