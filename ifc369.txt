@@ -1,0 +1,837 @@
+/* REXX ***************************************************************/
+/* Aggregated accounting stats.                                       */
+/*                                                                    */
+/* <ssid>       DB2 subsystem name                                    */
+/* <numtimes>   Number of intervals (default 60)                      */
+/* <sleeptime>  Time in seconds between two intervals (default 60)    */
+/*                                                                    */
+/* IFCID 369 is not available in SMF (maybe a bug because literature  */
+/* and SDSNMACS or SDSNIVPD(DSNWMSGS) doesn't say that)               */
+/*                                                                    */
+/* V11 tested (DB2CALL is associated with BATCH connection)           */
+/* 06/10/2017 Ziip times and Bugs correction                          */
+/* 30/04/2021 Add more wait                                           */
+/* REXX****************************************************************/
+arg hlq ssid numtimes sleeptime
+numeric digits 25
+if ssid = '' then do
+ say 'YOU MUST ENTER THE NAME OF THE DB2 SUBSYSTEM'
+ exit 20
+end
+if numtimes = '' then numtimes = 60
+if datatype(numtimes) <> 'NUM' then do
+ logds = numtimes
+ numtimes = 60
+end
+if sleeptime = '' then sleeptime = 60
+if datatype(sleeptime) <> 'NUM' then do
+ logds = sleeptime
+ sleeptime = 60
+end
+ 
+ 
+say ' '
+say 'Processing for Subsys' ssid
+say '    Number of iteration : ' numtimes
+say '    Sleep time (seconds): ' sleeptime
+say ' '
+ 
+call alloc_file
+/* init compteurs divers */
+call init_var
+/* WRITE report header */
+CALL write_header
+/* Connect and Start Trace */
+CALL Init_DB2
+say ' '
+say ' '
+ 
+iterno = 0
+ 
+/* Loop of  READS command using IFI interface */
+do numtimes
+    iterno = iterno+1
+    Say '**** READS iteration ****' iterno
+    call IfiREADS
+    /* if nothing to read then wait */
+    if  bytes_ret = 0 then
+    do
+        call wait
+        iterate
+    end
+    /* Processing data read with READS */
+    call IfiHeaderCheck
+    /* process each data section*/
+    cur_data_section = 1
+    do while cur_data_section < datan /* Not <= !!! */
+        /* ptr to next self defined. data section */
+        j=5+8*cur_data_section
+        offset_data= c2d(substr(rec,j,4))+1
+        len_data= c2d(substr(rec,j+4,2))
+        /* len can be zero , read sdsnmacs DSNDQWT0 */
+        /* (it is called "varying length repeating group")  */
+        rep_data= c2d(substr(rec,j+6,2))
+        if len_data = 0 then
+        do
+            reci=reci+1
+            say  '     Varying length repeating group !!!!!'
+            call ProcessVarLenRepGroup
+            leave
+        end
+     /* With ifc369 len=1 */
+     /* i = current data section */
+        call QW0369
+        cur_data_section=cur_data_section+1
+    end  /* processing datan */
+  if datan > 2 then call Write_Report
+  call wait
+end /* end do numtimes */
+ 
+/* End of program */
+if TraceStarted then call StopTrace tno
+ 
+/* Disconnect from DB2 */
+ADDRESS DSNREXX "DISCONNECT"
+ 
+/* Close & Deallocate files */
+"EXECIO "QUEUED()" DISKW OUFS(FINIS"
+"FREE F(OUFS)"
+say 'End of Program'
+say '   Nbr records written : ' reco
+say '   Nbr records read    : ' reci
+exit 0
+ 
+StopTrace:
+ arg tno
+ tno=strip(tno)
+ say 'Stop Trace ...'
+ if datatype(tno) = 'NUM' & tno > 0 then do
+    CMD = '-STO TRACE(STAT) TNO('tno')'
+    say CMD
+    COMMAND = substr('COMMAND',1,10)
+    IFCA = '00B40000'X!!'IFCA'!!copies('00'X,172)
+    RtrSz = 512
+    RtrArea = d2c(RtrSz+4,4)left(' ',RtrSz,' ')
+    DumZon = d2c(length(CMD)+4,2)!!'0000'X!!CMD
+    Buff = '00000000'X!!'WBUF'!!'0000000000000000'X
+    ADDRESS LINKPGM "DSNWLI2 COMMAND IFCA RtrArea DumZon Buff"
+    RetC = c2d(substr(IFCA,13,4))
+    Reas = d2x(c2d(substr(IFCA,17,4)))
+    Say 'RC/RS' retc Reas
+    if RetC <> 0 & Reas <> 'E60820' then do
+     say 'PROBLEM WITH STOP TRACE COMMAND'
+     say 'COMMAND RETCODE = ' RetC
+     say 'COMMAND REASON = ' Reas
+    end
+    else say 'Trace stopped.'
+ end    /* if datatype(tno */
+ else say '** Warning - MONITOR trace was started but not stopped **'
+ return
+/*--------------------------------------------------------------------*/
+ProcessVarLenRepGroup:
+      k=cur_data_section /* number of data section to process */
+      Say 'ProcessVarLenRepGroup: number of data sect to process' i
+      offset_data2= offset_data
+      do while k <= rep_data
+          len_data2= c2d(substr(rec,offset_data2,2))
+          k=k+1
+       /* Subsequent members can be found by advancing the pointers*/
+       /* (length of current member + 2 bytes) forward.            */
+          Call QW0401 offset_data2+2
+          if write   > 0 then Call Write_Report
+          offset_data2=  offset_data2+len_data2+2 /*cf doc sdsnmacs*/
+      end
+   RETURN
+ 
+QW0369:
+       timex=time()
+       hrx  =substr(timex,1,2)
+       select
+            when cur_data_section = 1 then call QW0369_1
+            when cur_data_section = 2 then call QW0369_2
+            when cur_data_section = 3 then call QW0369_3
+            when cur_data_section = 4 then call QW0369_4
+            otherwise say 'datasect unknow' cur_data_section
+       end
+       return
+QW0369_1:
+       /* do the display only the first time */
+       if already_here = 1 then return
+       already_here = 1
+       Offs=Offset_data
+       /* QW0369ST */
+       clock =c2x(SUBSTR(rec,offs,8))
+       call stck2local clock
+       dates0=substr(TSDate,1,10)
+       Times0=substr(TSTime,1,12)
+       /* QW0369SP */
+       offs = offs + 8
+       clock =c2x(SUBSTR(rec,offs,8))
+       call stck2local clock
+       dates0=substr(TSDate,1,10)
+       Times0=substr(TSTime,1,12)
+  return
+ 
+QW0369_2:
+       /* save start of Ifcid Data */
+       Offs=Offset_data
+       idx = 1
+      /* Possible values for QW0369CN
+       QW0369IMS DC  CL8'MASS    '  IMS attach
+       QW0369CCS DC  CL8'SASS    '  CICS attach
+       QW0369RSF DC  CL8'RRSAF   '  RRSAF attach
+       QW0369UTL DC  CL8'UTILITY '  Utility
+       QW0369BTC DC  CL8'BATCH   '  Batch
+       QW0369DIS DC  CL8'DIST    '  DDF connection  */
+ 
+       do while idx <= rep_data
+            conn.idx=strip(substr(rec,offs,8))
+            if conn.idx = 'SASS' then conn.idx = 'CICS'
+            else if conn.idx = 'MASS' then conn.idx = 'IMS'
+            offs = offs + 8
+            idx=idx+1
+       end
+       return
+QW0369_3:
+       /* save start of Ifcid Data */
+       Offs=Offset_data
+       idx = 1
+       do while idx <= rep_data
+            call DSNDQWAC
+            offs = offs + len_data
+            idx=idx+1
+       end
+  return
+QW0369_4:
+       /* save start of Ifcid Data */
+       Offs=Offset_data
+       idx = 1
+       do while idx <= rep_data
+            call DSNDQWAX
+            offs = offs + len_data
+            idx=idx+1
+       end
+  return
+ 
+alloc_file:
+   /* Report dataset on DumZon */
+   ddx = Date('Days')
+   oufs = "'" !! hlq !! '.REPORT.'ssid'.IFC369.D'ddx !! "'"
+    "DELETE" oufS "PURGE"
+ 
+   Say OUFS ' will be allocated in DISP=MOD'
+   "ALLOC FI(OUFs) DA("oufs") MOD CATALOG REUSE" ,
+   "LRECL(500) RECFM(V B) TRACKS SPACE(100,100)"
+   rcalloc = rc
+   if rcalloc <> 0 then Do
+        say "**********************************************"
+        say "   Error allocating repSQL file" rcalloc
+        say "   Abnormal end  "
+        say "**********************************************"
+        Exit 8
+   end
+  RETURN
+diff_val:
+  /* compute the difference between values */
+  if reco=1 then Oconn.idx =  conn.idx
+  if conn.idx = Oconn.idx then
+  do
+    Difelaps.idx         =elaps.idx          -  Oelaps.idx
+    DifComm.idx          =Comm.idx           -  OComm.idx
+    DifAbort.idx         =Abort.idx          -  OAbort.idx
+    Difcl1cpu.idx        =cl1cpu.idx         -  Ocl1cpu.idx
+    Difdb2ela.idx        =db2ela.idx         -  Odb2ela.idx
+    Difdb2cpu.idx        =db2cpu.idx         -  Odb2cpu.idx
+    DifCl1Ziip.idx       =Cl1Ziip.idx        -  OCl1Ziip.idx
+    DifGCPZiip.idx       =GCPZiip.idx        -  OGCPZiip.idx
+    DifWaitIO.idx        =WaitIO.idx         -  OWaitIO.idx
+    DifWaitLock.idx      =WaitLock.idx       -  OWaitLock.idx
+    DifWaitOthRead.idx   =WaitOthRead.idx    -  OWaitOthRead.idx
+    DifWaitOthWrit.idx   =WaitOthWrit.idx    -  OWaitOthWrit.idx
+    DifWaitSwitchs.idx   =WaitSwitchs.idx    -  OWaitSwitchs.idx
+    DifWaitLatchs.idx    =WaitLatchs.idx     -  OWaitLatchs.idx
+    DifWaitWrLog.idx     =WaitWrLog.idx      -  OWaitWrLog.idx
+    DifWaitTCPLob.idx    =WaitTCPLOB.idx     -  OWaitTCPLOB.idx
+    DifWaitAccel.idx     =WaitAccel.idx      -  OWaitAccel.idx
+    DifWaitPLatch.idx    =WaitPLatch.idx     -  OWaitPLatch.idx
+    DifWaitMsgMem.idx    =WaitMsgMem.idx     -  OWaitMsgMem.idx
+    DifWaitGlLock.idx    =WaitGlLock.idx     -  OWaitGlLock.idx
+    DifWaitSPTCB.idx     =WaitSPTCB.idx      -  OWaitSPTCB.idx
+    DifWaitUDTCB.idx     =WaitUDTCB.idx      -  OWaitUDTCB.idx
+    DifNbSample.idx      =NbSample.idx       -  ONbSample.idx
+    DifLogRecs.idx       =LogRecs.idx        -  OLogRecs.idx
+    DifLogByte.idx       =LogByte.idx        -  OLogByte.idx
+    DifWaitLogQuiesce.idx=WaitLogQuiesce.idx -  OWaitLogQuiesce.idx
+    DifWaitLogReads.idx  =WaitLogReads.idx   -  OWaitLogReads.idx
+    DifWaitOpenClose.idx =WaitOpenClose.idx  -  OWaitOpenClose.idx
+    DifWaitSLGRX.idx     =WaitSLGRX.idx      -  OWaitSLGRX.idx
+    DifWaitDSExt.idx     =WaitDSExt.idx      -  OWaitDSExt.idx
+    DifWaitGlbChldLLock.idx =WaitGlbChldLLock.idx-OWaitGlbChldLLock.idx
+    DifWaitGlbOthLLock.idx=WaitGlbOthLLock.idx-OWaitGlbOthLLock.idx
+    DifWaitGlbPsPLock.idx=WaitGlbPsPLock.idx-OWaitGlbPsPLock.idx
+    DifWaitGlbPgPLock.idx=WaitGlbPgPLock.idx-OWaitGlbPgPLock.idx
+    DifWaitGlbOthPLock.idx=WaitGlbOthPLock.idx-OWaitGlbOthPLock.idx
+    DifWaitComm1.idx     = WaitComm1.idx - OWaitComm1.idx
+    DifWaitIXLCACHE.idx  = WaitIXLCACHE.idx - OWaitIXLCACHE.idx
+ 
+    Oconn.idx               =conn.idx
+    Oelaps.idx              =elaps.idx
+    OComm.idx               =Comm.idx
+    OAbort.idx              =Abort.idx
+    Ocl1cpu.idx             =cl1cpu.idx
+    Odb2ela.idx             =db2ela.idx
+    Odb2cpu.idx             =db2cpu.idx
+    OCl1Ziip.idx            =Cl1Ziip.idx
+    OGCPZiip.idx            =GCPZiip.idx
+    OWaitIO.idx             =WaitIO.idx
+    OWaitLock.idx           =WaitLock.idx
+    OWaitOthRead.idx        =WaitOthRead.idx
+    OWaitOthWrit.idx        =WaitOthWrit.idx
+    OWaitSwitchs.idx        =WaitSwitchs.idx
+    OWaitLatchs.idx         =WaitLatchs.idx
+    OWaitWrLog.idx          =WaitWrLog.idx
+    OWaitTCPLOB.idx         =WaitTCPLOB.idx
+    OWaitMsgMem.idx         =WaitMsgMem.idx
+    OWaitAccel.idx          =WaitAccel.idx
+    OWaitPLatch.idx         =WaitPLatch.idx
+    OWaitGlLock.idx         =WaitGlLock.idx
+    OWaitSPTCB.idx          =WaitSPTCB.idx
+    OWaitUDTCB.idx          =WaitUDTCB.idx
+    ONbSample.idx           =NbSample.idx
+    OLogRecs.idx            =LogRecs.idx
+    OLogByte.idx            =LogByte.idx
+    OWaitLogQuiesce.idx     =WaitLogQuiesce.idx
+    OWaitLogReads.idx       =WaitLogReads.idx
+    OWaitOpenClose.idx      =WaitOpenClose.idx
+    OWaitSLGRX.idx          =WaitSLGRX.idx
+    OWaitDSExt.idx          =WaitDSExt.idx
+    OWaitGlbChldLLock.idx=  WaitGlbChldLLock.idx
+    OWaitGlbOthLLock.idx =  WaitGlbOthLLock.idx
+    OWaitGlbPsPLock.idx  =  WaitGlbPsPLock.idx
+    OWaitGlbPgPLock.idx  =  WaitGlbPgPLock.idx
+    OWaitGlbOthPLock.idx =  WaitGlbOthPLock.idx
+    OWaitComm1.idx = WaitComm1.idx
+    OWaitIXLCACHE.idx = WaitIXLCACHE.idx
+ 
+  end
+  else
+  do
+    Say 'The connection list has changed'
+    Say "The program can't handle this in the current release"
+    Difelaps.idx         =elaps.idx
+    DifComm.idx          =Comm.idx
+    DifAbort.idx         =Abort.idx
+    Difcl1cpu.idx        =cl1cpu.idx
+    Difdb2ela.idx        =db2ela.idx
+    Difdb2cpu.idx        =db2cpu.idx
+    DifCl1Ziip.idx       =Cl1Ziip.idx
+    DifGCPZiip.idx       =GCPZiip.idx
+    DifWaitIO.idx        =WaitIO.idx
+    DifWaitLock.idx      =WaitLock.idx
+    DifWaitOthRead.idx   =WaitOthRead.idx
+    DifWaitOthWrit.idx   =WaitOthWrit.idx
+    DifWaitSwitchs.idx   =WaitSwitchs.idx
+    DifWaitLatchs.idx    =WaitLatchs.idx
+    DifWaitWrLog.idx     =WaitWrLog.idx
+    DifWaitTCPLOB.idx    =WaitTCPLOB.idx
+    DifWaitAccel.idx     =WaitAccel.idx
+    DifWaitPLatch.idx    =WaitPLatch.idx
+    DifWaitMsgMem.idx    =WaitMsgMem.idx
+    DifWaitGlLock.idx    =WaitGlLock.idx
+    DifWaitSPTCB.idx     =WaitSPTCB.idx
+    DifWaitUDTCB.idx     =WaitUDTCB.idx
+    DifNbSample.idx      =NbSample.idx
+    DifLogRecs.idx       =LogRecs.idx
+    DifLogByte.idx       =LogByte.idx
+    DifWaitLogQuiesce.idx=WaitLogQuiesce.idx
+    DifWaitLogReads.idx  =WaitLogReads.idx
+    DifWaitOpenClose.idx =WaitOpenClose.idx
+    DifWaitSLGRX.idx     =WaitSLGRX.idx
+    DifWaitDSExt.idx     =WaitDSExt.idx
+    DifWaitGlbChldLLock.idx=WaitGlbChldLLock.idx
+    DifWaitGlbOthLLock.idx= WaitGlbOthLLock.idx
+    DifWaitGlbPsPLock.idx= WaitGlbPsPLock.idx
+    DifWaitGlbPgPLock.idx= WaitGlbPgPLock.idx
+    DifWaitGlbOthPLock.idx= WaitGlbOthPLock.id
+    DifWaitComm1.idx =WaitComm1.idx
+    DifWaitIXLCACHE.idx =WaitIXLCACHE.idx
+  end
+return
+ 
+init_var:
+  /* compteurs input/DumZon */
+  nbr_ifcid = 0
+  reco= 0
+  already_here = 0
+  /* Date */
+  datex= date('E')
+  idx=1
+  /* Init Old value */
+  do until idx > 6  /* 6 = all possible values */
+        Oconn.idx  = ''
+        Oelaps.idx = 0
+        OComm.idx = 0
+        OAbort.idx = 0
+        Ocl1cpu.idx = 0
+        Odb2ela.idx = 0
+        Odb2cpu.idx = 0
+        OCl1Ziip.idx = 0
+        OGCPZiip.idx = 0
+        OWaitIO.idx = 0
+        OWaitLock.idx = 0
+        OWaitOthRead.idx = 0
+        OWaitOthWrit.idx = 0
+        OWaitSwitchs.idx = 0
+        OWaitLatchs.idx = 0
+        OWaitWrLog.idx = 0
+        OWaitMsgMem.idx = 0
+        OWaitTCPLOB.idx = 0
+        OWaitPlatch.idx = 0
+        OWaitAccel.idx = 0
+        OWaitGlLock.idx = 0
+        OWaitSPTCB.idx = 0
+        OWaitUDTCB.idx = 0
+        ONbSample.idx   = 0
+        OLogRecs.idx = 0
+        OLogByte.idx = 0
+        OWaitLogQuiesce.idx = 0
+        OWaitLogReads.idx = 0
+        OWaitOpenClose.idx = 0
+        OWaitSLGRX.idx = 0
+        OWaitDSExt.idx = 0
+        OWaitGlbChldLLock.idx =0
+        OWaitGlbOthLLock.idx=  0
+        OWaitGlbPsPLock.idx=   0
+        OWaitGlbPgPLock.idx=   0
+        OWaitGlbOthPLock.idx= 0
+        OWaitComm1.idx =0
+        OWaitIXLCACHE.idx =0
+ 
+        idx=idx+1
+  end
+  return
+ 
+write_header:
+    say 'CSV file ' oufS     ' will be produced'
+    queue 'SSID,',
+    'Date,Time,Hour,Conn,Nbsampl,Commits,Abort,Cl1El,Cl1cpu,',
+    'Cl2ela,Cl2cpu,',
+    'Cl1Ziip,GCPZiip,',
+    'WaitIO,WtLocks,WtOthReads,WtOthWrt,WtUnitSw,',
+    'WtWrtLatch,WtWrtLog,WtTCPLOB,WtAccel,WtPgLatch,WtMsgDSMemb,',
+    'WtGLLock,WtSPTCB,WtUDTCB,LogRecs,LogBytesM,',
+    'WtLogQuies,WtLogRds,WtOpeClos,WtSYSLGX,WtDSExt,',
+    'WtGlbChldLLock,',
+    'WtGlbOthLLock,',
+    'WtGlbPsPLock,',
+    'WtGlbPgPLock,',
+    'WtGlbOthPLock,',
+    'WtComm1,',
+    'WtIXLCACHE'
+ 
+    "EXECIO" queued() "DISKW OUFS"
+  return
+Write_Report:
+    reco= reco+ 1
+    /*rows in excel format */
+    maxidx = idx-1
+    idx = 1
+    do until idx > maxidx
+      call Diff_val
+      queue ssid                !! ',' ,
+      !! datex                  !! ',' ,
+      !! Timex                  !! ',' ,
+      !! hrx                    !! ',' ,
+      !! conn.idx               !! ',' ,
+      !! DifNbSample.idx        !! ',' ,
+      !! DifComm.idx            !! ',' ,
+      !! DifAbort.idx           !! ',' ,
+      !! Difelaps.idx           !! ',' ,
+      !! Difcl1cpu.idx          !! ',' ,
+      !! Difdb2ela.idx          !! ',' ,
+      !! Difdb2cpu.idx          !! ',' ,
+      !! DifCl1Ziip.idx         !! ',' ,
+      !! DifGCPZiip.idx         !! ',' ,
+      !! DifWaitIO.idx          !! ',' ,
+      !! DifWaitLock.idx        !! ',' ,
+      !! DifWaitOthRead.idx     !! ',' ,
+      !! DifWaitOthWrit.idx     !! ',' ,
+      !! DifWaitSwitchs.idx     !! ',' ,
+      !! DifWaitLatchs.idx      !! ',' ,
+      !! DifWaitWrLog.idx       !! ',' ,
+      !! DifWaitTCPLOB.idx      !! ',' ,
+      !! DifWaitAccel.idx       !! ',' ,
+      !! DifWaitPlatch.idx      !! ',' ,
+      !! DifWaitMsgMem.idx      !! ',' ,
+      !! DifWaitGlLock.idx      !! ',' ,
+      !! DifWaitSPTCB.idx       !! ',' ,
+      !! DifWaitUDTCB.idx       !! ',' ,
+      !! DifLogRecs.idx         !! ',' ,
+      !! trunc(DifLogByte.idx/1000000) !! ',' ,
+      !! DifWaitLogQuiesce.idx  !! ',' ,
+      !! DifWaitLogReads.idx    !! ',' ,
+      !! DifWaitOpenClose.idx   !! ',' ,
+      !! DifWaitSLGRX.idx       !! ',' ,
+      !! DifWaitDSExt.idx       !! ',' ,
+      !! DifWaitGlbChldLLock.idx   !! ',' ,
+      !! DifWaitGlbOthLLock.idx    !! ',' ,
+      !! DifWaitGlbPsPLock.idx     !! ',' ,
+      !! DifWaitGlbPgPLock.idx     !! ',' ,
+      !! DifWaitGlbOthPLock.idx    !! ',' ,
+      !! DifWaitComm1.idx          !! ',' ,
+      !! DifWaitIXLCACHE.idx
+ 
+    idx = idx+1
+   end
+ 
+   "EXECIO "QUEUED()" DISKW OUFS"
+return
+ 
+IfiREADS:
+ READS = substr('READS',1,8)
+ IFCA = '00B40000'X!!'IFCA'!!copies('00'X,172) /* 180*/
+ RtrSz =  50000 /* if too small nothig get back */
+ 
+read_again:
+ RtrArea = d2c(RtrSz+4,4)left(' ',RtrSz,' ')
+ IFCIDAREA = '000600000171'X  /*IFCID 369*/
+ say 'Call IFI Reads'
+ ADDRESS LINKPGM "DSNWLI2 READS IFCA RtrArea IFCIDAREA"
+ RetC = c2d(substr(IFCA,13,4))
+ Reas = d2x(c2d(substr(IFCA,17,4)))
+ if RetC > 4 then do
+  say 'Error READS ...'
+  say '  READS RETCODE = ' RetC
+  say '  READS REASON = ' Reas
+  if TraceStarted then call StopTrace tno
+  exit 8
+ end
+ bytes_ret = c2d(substr(IFCA,21,4)) /*IFCABM*/
+ bytes_left = c2d(substr(IFCA,25,4))   /*IFCABNM*/
+ if bytes_ret = 0 then
+    do
+      say '** Warning - Nothing to read  **'
+      return
+    end
+ if bytes_left > 0 then
+ do
+    say '** Warning - Truncated IFCID369 record **'
+    say bytes_left ' bytes not reported'
+    RtrSz =bytes_left + bytes_ret
+    say 'Retry READS with value' RtrSz
+    signal read_again
+ end
+ return
+ 
+IfiHeaderCheck:
+ /* Processing RTNAREA */
+ /* 4 bytes (RTNAREA Len.)  */
+ /* 2 bytes (IFCID Data Len) + 2 reserved  */
+ /* Self defining Section (Pointers to Prod section and data sect. */
+ /*      4 bytes offset to Prod, 2 bytes Len of Prod Section,  */
+ /*                              2 bytes Repeat Prod Section,  */
+ /*      4 bytes offset to Data, 2 bytes Len of Data Section,  */
+ /*                              2 bytes Repeat Data Section,  */
+ /* Header described by DSNDQWIW */
+ if  c2d(substr(RtrArea,5,1)) = 128   /* first byte = x'80' */
+    then    len  = c2d(substr(RtrArea,6,3)) /* Len QWIWLEN */
+    else    len  = c2d(substr(RtrArea,5,2))
+ Rec  = substr(RtrArea,5,LEN)     /* recup data */
+ /* go to Product section - mapped by DSNDQWHS */
+ offset_prod = c2d(substr(rec,5,4))+1
+ /* len_prod = c2d(substr(rec,9,2))
+ rep_prod = c2d(substr(rec,11,2)) */
+ Ifcid = c2d(substr(rec,offset_prod+4,2))
+ DataN  = c2d(substr(rec,offset_prod+6,1))
+ DB2Rel = c2x(substr(rec,offset_prod+7,1))
+ 
+ /* DB2 release */
+ 
+ 
+ RETURN
+ 
+STCK2Local:
+    /* Store Clock Value Time to Local Time */
+    arg clock
+    clock = SPACE(clock,0)
+    cvt     = C2X(STORAGE(10,4))
+    cvttz_p = D2X(X2D(cvt) + X2D(130))
+    tzo     = STORAGE(cvttz_p,4)
+    tzo     = C2D(tzo,4)*1.048576
+    tzo     = (tzo+.5)%1
+    ndigits = MAX(6,1.2*LENGTH(clock)+1)%1
+    Numeric Digits ndigits
+    clock   = x2d(clock)*1.048576 / 16**(LENGTH(clock)-8)
+    clock   = clock + tzo
+    If clock < 0  Then Parse Value 0      0     ,
+                             With  clock  tzo
+    seconds = clock // (24*60*60)
+    days    = clock %  (24*60*60)
+    days    = days + 2415021
+    Parse Value DATECONV(days) With y m d dow
+    hours   = RIGHT( seconds %3600    ,2,'0')
+    minutes = RIGHT((seconds//3600)%60,2,'0')
+    seconds = seconds//60
+    /* t1      = y'/'m'/'d hours':'minutes':'seconds   */
+    TsTime  =  hours':'minutes':'seconds
+    TsDate  =  y'/'m'/'d
+    return
+ 
+DATECONV:
+    Parse Upper Arg julday
+    j =julday-1721119
+    d =((4*j-1)//146097+146097)//146097
+    d =d%4
+    y =(4*j-1)%146097*100+(4*d+3)%1461
+    d =(((4*d+3)//1461+1461)//1461+4)%4
+    m =(5*d-3)%153
+    d =(((5*d-3)//153+153)//153+5)%5
+    If m<10 ,
+      Then  Parse Value m+3     With m
+      Else  Parse Value m-9 y+1 With m y
+    dow = (julday+1)//7
+    Return RIGHT(y,4,'0') RIGHT(m,2,'0') RIGHT(d,2,'0')   ,
+       WORD('Sun Mon Tue Wed Thu Fri Sat',1+dow) !! 'day'
+ 
+wait:
+  /* Wait before next Reads */
+  if iterno < numtimes then do
+        if sleeptime > 0  then
+        do
+                say 'Wait for ' sleeptime 'seconds'
+                call syscalls 'ON'
+                address syscall 'sleep ' sleeptime
+                call syscalls 'OFF'
+        end /* sleeptime > 0 */
+  end /* if iterno < ... */
+  return
+Init_DB2:
+  /* Connect to DB2 subsystem */
+  ADDRESS TSO "SUBCOM DSNREXX"
+   if RC then
+   S_RC = RXSUBCOM('ADD','DSNREXX','DSNREXX')
+  ADDRESS DSNREXX "CONNECT "SSID
+  if SQLCODE <> 0 then do
+   say 'PROBLEM CONNECTING TO DB2'
+   say 'SQLCODE = ' SQLCODE
+   say 'SQLSTATE = ' SQLSTATE
+   say 'SQLERRP = ' SQLERRP
+   say 'SQLERRMC = ' SQLERRMC
+   exit 12
+  end
+ 
+  /* Prepare START TRACE command */
+  CMD = '-STA TRACE(STAT) CLASS(9) DEST(OPX)'
+  COMMAND = substr('COMMAND',1,10)
+  /*init zones */
+  IFCA = '00B40000'X!!'IFCA'!!copies('00'X,172) /*180*/
+  RtrSz = 512
+  RtrArea = d2c(RtrSz+4,4)left(' ',RtrSz,' ')
+  DumZon = d2c(length(CMD)+4,2)!!'0000'X!!CMD
+  Buff = '00000000'X!!'WBUF'!!'0000000000000000'X
+  /* Submit START command using IFI interface */
+  ADDRESS LINKPGM "DSNWLI2 COMMAND IFCA RtrArea DumZon Buff"
+  RetC = c2d(substr(IFCA,13,4))
+  Reas = d2x(c2d(substr(IFCA,17,4)))
+  say CMD
+  say 'RC/reas' Retc Reas
+  if RetC <> 0 & Reas <> 'E60820' then do
+   say 'PROBLEM WITH START TRACE COMMAND'
+   say 'COMMAND RETCODE = ' RetC
+   say 'COMMAND REASON = ' Reas
+   exit 16
+  end
+  /*
+    Check if message DSNW130I was issued indicating a
+    new trace has been
+    started, and if so remember the tno so trace can be stopped later.
+  */
+  TraceStarted = 1
+  LEN = c2d(substr(RtrArea,5,2))
+  MSG = substr(RtrArea,9,LEN-5)
+  parse var MSG msgno . 'TRACE NUMBER 'tno
+  say MSG
+  msglst = 'DSNW130I DSNW135I'
+  if wordpos(msgno,msglst) = 0 then
+      do
+        TraceStarted = 0
+      end
+ 
+  return
+ 
+DSNDQWAC: /* MAP ACCOUNTING DATA SECTION */
+  NUMERIC DIGITS 30
+  offset=offs
+  /* transform to local time value */
+  Clock = c2x(SUBSTR(rec,offset,8))
+  call STCK2Local Clock
+  ThdStart= LocalTime
+  /* QWACBSC DS XL8 CLASS 1 BEGINNING STORE CLOCK VALUE*/
+  QWACBSC = C2X(SUBSTR(rec,OFFSET,8)) /*CONVERT INTO HEX VALUE*/
+  QWACBSC = x2d(SUBSTR(QWACBSC,1,13)) /*ELIMINATE 1.5 BYTES */
+  OFFSET = OFFSET + 8
+  /* QWACESC DS XL8 CLASS 1 ENDING STORE CLOCK VALU */
+  QWACESC = C2X(SUBSTR(rec,OFFSET,8)) /*CONVERT INTO HEX VALUE */
+  QWACESC = X2D(SUBSTR(QWACESC,1,13)) /*ELIMINATE 1.5 BYTES */
+  OFFSET = OFFSET + 8
+  ELAPSED_TIME = ( QWACESC - QWACBSC ) /1000000
+  if elapsed_time < 0 then
+      do
+         elapsed_time = QWACESC / 1000000
+      end
+  elaps.idx=   elapsed_time
+  /* QWACBJST DS XL8 BEGINNING TCB CPU TIME FROM MVS (CLASS 1)*/
+  QWACBJST = C2X(SUBSTR(rec,OFFSET,8)) /*CONVERT INTO HEX VALUE*/
+  QWACBJST = X2D(SUBSTR(QWACBJST,1,13)) /*ELIMINATE 1.5 BYTES */
+  OFFSET = OFFSET + 8
+  /* QWACEJST DS XL8 ENDING TCB CPU TIME IN ALL ENVIRONMENTS */
+  QWACEJST = C2X(SUBSTR(rec,OFFSET,8)) /*CONVERT INTO HEX VALUE*/
+  QWACEJST = X2D(SUBSTR(QWACEJST,1,13)) /*ELIMINATE 1.5 BYTES */
+  TCB_TIME = (QWACEJST - QWACBJST)/1000000
+  cl1cpu.idx= TCB_TIME
+  OFFSET = OFFSET + 24
+  /* QWACRINV=X2D(SUBSTR(rec,OFFSET,4) */
+  OFFSET = OFFSET + 20
+  QWACCOMM=C2D(SUBSTR(rec,OFFSET,4))
+  Comm.idx = QWACCOMM
+  OFFSET = OFFSET + 4
+  QWACABRT    =C2D(SUBSTR(rec,OFFSET,4))
+  Abort.idx = QWACABRT
+  OFFSET = OFFSET + 4
+  /* QWACASC  Accum Elapsed time in DB2 */
+  QWACASC  = C2X(SUBSTR(rec,OFFSET,8))
+  QWACASC  = X2D(SUBSTR(QWACASC ,1,13))
+  QWACASC   = QWACASC /1000000
+  db2ela.idx= QWACASC
+  offset=offset + 8
+  /* QWACAJST DB2 CPU en stck value */
+  /* attention : this is stck time , not local time ! */
+  QWACAJST = C2X(SUBSTR(rec,OFFSET,8))
+  QWACAJST = X2D(SUBSTR(QWACAJST,1,13))
+  QWACAJST  = QWACAJST/1000000
+  db2cpu.idx= QWACAJST
+  offset=offset + 8
+  /* Skip next 8   bytes */
+  offset=offset + 8
+  /* Elapsed Wait Sync I/O - QWACAWTI */
+  WaitIO.idx= x_time(offset)
+  offset=offset + 8
+  /* Elap Wait local locks & latchs - QWACAWTL */
+  WaitLock.idx=  x_time(offset)
+  offset=offset + 16
+  /* Wait other Read I/O - QWACAWTR */
+  WaitOthRead.idx= x_time(offset)
+  offset=offset + 8
+  /* Wait other write QWACAWTW */
+  WaitOthWrit.idx=   x_time(offset)
+  offset=offset + 8
+  /* Wait commit switches QWACAWTE */
+  WaitSwitchs.idx=  x_time(offset)
+  offset=offset + 8
+  /* Wait Latch contentions QWACAWLH */
+  WaitLatchs.idx= x_time(offset)
+  offset=offset + 32
+  /* Wait write log  QWACAWLG */
+  WaitWrLog.idx = x_time(offset)
+  offset=offset + 12
+  /* Wait TCP/IP LOB XML QWACALBW */
+  WaitTCPLOB.idx = x_time(offset)
+  offset=offset + 12
+  /* Wait Request Accelerator  QWACAACW*/
+  WaitAccel.idx = x_time(offset)
+  offset=offset + 8
+  /* Wait Page Latch  QWACAWTP */
+  WaitPLatch.idx = x_time(offset)
+  offset=offset + 12
+  /* Display Flags */
+  offset=offset + 4
+  /* Wait messages to others members QWACAWTG */
+  WaitMsgMem.idx =   x_time(offset)
+  offset=offset + 8
+  /* Wait global locks   QWACAWTJ */
+  WaitGlLock.idx=   x_time(offset)
+  offset=offset + 8
+  /* skip xx bytes */
+  offset=offset + 28
+  /* SP wait for TCB  QWACCAST */
+  WaitSPTCB.idx=  x_time(offset)
+  offset=offset + 12
+  /* Number of transactions contributing to the accumulation */
+  QWACPCNT = C2D(SUBSTR(rec,OFFSET,4))
+  NbSample.idx=    QWACPCNT
+  offset=offset + 20
+  /* log records */
+  QWACLRN  = C2D(SUBSTR(rec,OFFSET,4))
+  offset=offset + 4
+  LogRecs.idx=     QWACLRN
+  /* log bytes written */
+  QWACLRAB = C2D(SUBSTR(rec,OFFSET,8))
+  LogByte.idx =    QWACLRAB
+  offset=offset + 8
+  /* skip   xx bytes   */
+  offset=offset + 20
+  /* UDFwait for TCB  QWACUDST */
+  WaitUDTCB.idx=    x_time(offset)
+  offset=offset + 100
+  /* Elap Glob contention for child L-locks  QWACAWTK*/
+  WaitGlbChldLLock.idx=    x_time(offset)
+  offset=offset + 8
+  /* Elap Glob contention for other L-locks QWACAWTM*/
+  WaitGlbOthLLock.idx=    x_time(offset)
+  offset=offset + 8
+  /* Elap Glob contention for pageset/partition P-locks QWACAWTN*/
+  WaitGlbPsPLock.idx=    x_time(offset)
+  offset=offset + 8
+  /* Elap Glob contention for page P-locks QWACAWTO*/
+  WaitGlbPgPLock.idx=    x_time(offset)
+  offset=offset + 8
+  /* Elap Glob contention for  other P-locks QWACAWTQ*/
+  WaitGlbOthPLock.idx=    x_time(offset)
+  offset=offset + 28
+  /* Ziip cl1 QWACCLS1_zIIP */
+  Cl1Ziip.idx = x_time(offset)
+  offset=offset + 24
+  /* Ziip eligible QWACZIIP_ELIGIBLE (executed on GCP) */
+  GCPZiip.idx = x_time(offset)
+  RETURN
+x_time:
+  arg offset
+  time8    = c2x(SUBSTR(rec,OFFSET,8))
+  time8    = X2D(SUBSTR(time8,1,13))
+  time8     = time8/1000000
+  return time8
+ 
+DSNDQWAX: /* Waits   */
+  NUMERIC DIGITS 30
+  offset=offs
+  /* Wait time due to Archive Log Mode(Quiesce) Command */
+  /* QWAXALOG */
+  WaitLogQuiesce.idx=  x_time(offset)
+  offset=offset+36
+  /* Wait time due Log Reads  (active and Archive)      */
+  /*QWAXAWAR */
+  WaitLogReads.idx = x_time(offset)
+  offset=offset+8+4
+  /* Wait time due to Open Close                        */
+  /* QWAXOCSE */
+  WaitOpenClose.idx = x_time(offset)
+  offset=offset+8
+  /* Wait time Syslog range                             */
+  /* QWAXSLSE  */
+  WaitSLGRX.idx= x_time(offset)
+  offset=offset+8
+  /* Wait time DataSet Extend                           */
+  /*QWAXDSSE */
+  WaitDSExt.idx= x_time(offset)
+  offset=offset+8
+  /* Wait time DataSet Extend                           */
+  /*QWAXDSSE */
+  WaitDSExt.idx= x_time(offset)
+  offset=offset+32
+  /* Wait time Commit Ph1 QWAXAWFC*/
+  WaitComm1.idx= x_time(offset)
+  offset=offset+16
+  /* Wait time IXLCACHE */
+  WaitIXLCACHE.idx= x_time(offset)
+  offset=offset+8
+  return
