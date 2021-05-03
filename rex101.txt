@@ -193,7 +193,7 @@ Do Forever
                             CALL DSNDQXST
                            end
                         else do
-                        /* pas de données sql*/
+                        /* pas de donnÃ©es sql*/
                            selects   =0
                            inserts   =0
                            updates   =0
@@ -207,7 +207,7 @@ Do Forever
                             CALL DSNDQBAC
                            end
                         else do
-                        /* pas de données buffer manager */
+                        /* pas de donnÃ©es buffer manager */
                            getp      =0
                            bufupd    =0
                            syncio    =0
@@ -582,9 +582,9 @@ DSNDQWAC: /* MAP ACCOUNTING DATA SECTION */
   /* QWACAJST DB2 CPU en stck value */
   /* attention : this is stck time , not local time ! */
   QWACAJST = C2X(SUBSTR(InpRec,ofs,8))
-  ofs=ofs + 8
   QWACAJST = X2D(SUBSTR(QWACAJST,1,13))
   QWACAJST  = QWACAJST/1000000
+  ofs=ofs + 8
   /* Skip next 8   bytes */
   ofs=ofs + 8
   /* Wait I/O */
