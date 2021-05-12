@@ -1,0 +1,284 @@
+//ETG8229D  JOB  (ACCTCODE),'EXPETUNE',CLASS=A,REGION=32M,
+//       NOTIFY=ETG8229,MSGCLASS=X
+//*
+//ASM     EXEC PGM=ASMA90,PARM='OBJECT,NODECK'                          00010500
+//SYSIN    DD  *                                                        00010600
+BAL      OPSYN     BAS
+BALR     OPSYN     BASR
+SMFSUM START       0
+*----------------------------------------------------------*
+* 19 Mar 2021                                              *
+*----------------------------------------------------------*
+* Program     : SMFSUM                                    -*
+* Written on  : 15.03.2021                                -*
+* Author      : Nguyen Duc Tuan                           -*
+* DESCRIPTION : Select 100 & 101 then give totals         -*
+* R1   System can't used                                  -*
+* R4   Smf record read                                    -*
+* R5   Self Def                                           -*
+* R6   Branch return register                             -*
+* R7   Active macro                                       -*
+* R8/9 Read/write counters                                -*
+* R10  TOT CPU                                            -*
+* R12-15 Reserved                                         -*
+*----------------------------------------------------------*
+BEGIN    SAVE  (14,12)
+         BALR  3,0
+         USING *,3
+         ST    13,SAVE+4
+         LA    13,SAVE
+*
+         OPEN      (SMFIN,INPUT,SMFOU100,OUTPUT)   OPEN INPUT OUTPUT
+         OPEN      (SMFOU101,OUTPUT)
+         OPEN      (SNAPDD,OUTPUT)
+         SR        8,8               0=>R8 READ COUNT
+         SR        9,9               0=>R9 WR COUNT
+         ZAP       TOTCPU,=P'0'      Init variables
+         ZAP       TOTCPUD,=P'0'
+*----------------------------------------------------------*
+*- MAIN PROGRAM                                           -*
+*----------------------------------------------------------*
+READON   DS        0H
+         BAL       6,READREC          READ RECORD
+         BAL       6,SELREC           SELECT RECORD
+         B         READON             GET NEXT RECORD
+*
+FNSELREC DS        0F
+         BR        6           Retour appelant
+*                                                END OF FILE
+ENDFILE  DS        0H
+*
+*  formatage Total records read
+         CVD   8,DBLWORD
+         MVC   TOTRD,MASK10DG
+* D = 8 caracteres , mais la zone edition est sur 10 chiffres
+* 8 caracteres  = 16 chiffres, il faut donc avancer de 3 pour
+* editer que sur 10 chiffres
+         ED    TOTRD,DBLWORD+3
+         MVC   PRTTXT,=CL18'SMF RECORDS READ :'
+         MVC   PRTVAL,TOTRD
+         WTO   MF=(E,WTOBLOC2),ROUTCDE=11 DISPLAY WTOBLOC2
+*  formattage & Display Total records selected
+         CVD   9,DBLWORD
+         MVC   TOTWR,MASK10DG
+         ED    TOTWR,DBLWORD+3
+         MVC   PRTTXT,=CL18'RECORDS SELECTED :'
+         MVC   PRTVAL,TOTWR
+         WTO   MF=(E,WTOBLOC2),ROUTCDE=11 DISPLAY WTOBLOC2
+*  formattage Total cpu DDF
+         MVC   OTOTCPU,MASK12DG
+         ZAP   PTOTCPU,TOTCPUD      12 DIGITS (6 AFTER COMMA)
+         ED    OTOTCPU,PTOTCPU      12 DIGITS (6 AFTER COMMA)
+* Check if overflow on totcpu
+         SNAP  DCB=SNAPDD,ID=01,PDATA=(REGS),                          X
+               STORAGE=(BEGINW,LASTW)
+         MVC   PRTTXT,=CL18'TOTAL CPU DDF    :'
+         MVC   PRTVAL,OTOTCPU
+         WTO   MF=(E,WTOBLOC2),ROUTCDE=11 DISPLAY WTOBLOC2
+*
+*  formattage Total cpu
+         MVC   OTOTCPU,MASK12DG
+         ZAP   PTOTCPU,TOTCPU       12 DIGITS (6 AFTER COMMA)
+         ED    OTOTCPU,PTOTCPU      12 DIGITS (6 AFTER COMMA)
+* Check if overflow on totcpu
+         SNAP  DCB=SNAPDD,ID=02,PDATA=(REGS),                          X
+               STORAGE=(BEGINW,LASTW)
+         MVC   PRTTXT,=CL18'TOTAL CPU        :'
+         MVC   PRTVAL,OTOTCPU
+         WTO   MF=(E,WTOBLOC2),ROUTCDE=11 DISPLAY WTOBLOC2
+*
+         CLOSE     (SMFIN,,SMFOU100,,SNAPDD)   CLOSE FILES
+         L     13,SAVE+4
+         LM    14,12,12(13)
+         SR    15,15
+         BR    14            R14 = RETURNED ADDRESS
+*----------------------------------------------------------*
+*- READREC ROUTINE                                        -*
+*----------------------------------------------------------*
+READREC  DS        0H
+         USING     SM100,4     SET UP ADDR.ABILITY
+         GET       SMFIN       GET RECORD LOCATE MODE (READ)
+         LR        4,1         LOAD R4 WITH RECORD
+         A         8,=F'1'     Increment R8 by 1 (Read count)
+         BR        6
+*----------------------------------------------------------*
+*- SELREC  ROUTINE                                        -*
+*----------------------------------------------------------*
+SELREC   CLI       SM100RTY,X'65'       IS THIS SMF101 ?
+         BNE       SEL100               NO
+*        SNAP      DCB=SNAPDD,ID=02,PDATA=(REGS)   SNAPSHOT
+* smf 101 here
+         CLC       SM100STF,=X'0000'    subtype 0 ? (no pack records)
+         BNE       FNSELREC             Not a right SMF101
+         USING     SM101,4     SET UP ADDRESSABILITY
+* Select SSID
+         CLC       SM101SSI,=CL4'A6D1'   Db2 Name
+         BNE       FNSELREC
+* Begin processing
+         LA        5,SM101END      Adresse de debut self-def
+         USING     QWA0,5           --> Self def-Section
+         L         7,QWA01PSO      QWA01PSO est un Offset par rapport
+         AR        7,4             au debut du record, pour avoir
+*                                  adresse absolue ajouter R4
+         USING     QWHS,7           --> Std header  puis Corr header
+* Select Plan ? CorrelId ...
+         LA        7,QWHSEND       Adresse Correlation header
+*                                  juste apres standard header
+         USING     QWHC,7           --> adressabilite
+         CLC       QWHCPLAN,=CL8'DISTSERV'
+         BNE       FNSELREC
+         MVC       OQWHCCV,QWHCCV /* Save first 4 characters corrid*/
+         DROP      7             Plus besoin de Corr Header
+* Access to DSNDQWAC  , R5 stills point to QWA0 (Self Def section)
+         L         7,QWA01R1O     QWA01R1O est l'offset vers DSNDQWAC
+         AR        7,4
+         USING     QWAC,7
+* cl1 tcb time into R10
+         L         10,QWACEJST+4 /* End tcb time*/
+         MVC       FLLWORD,QWACBJST+4 /* Beg tcb time*/
+         S         10,FLLWORD
+* cl2 tcb time into R10
+* Variable is on 2 bytes, we take only the second byte (accept
+*   truncation because we suppose that left byte not use
+*   FFFF is 65535 too high for our usage which is cpu
+*        L         10,QWACAJST+4
+* Take only the first 13 octets and / by 1000000
+* Shift Right Logical (SRL) s  and / by 1000000
+* Cela revient a decaler de 3 octets vers la droite,
+* REXX 000000000013925A => 13 premiers => 0000000000139
+* ASM  0013925A => 0000 0000 0001 0011 1001 0010 0101 1010
+*      SRL 12   => 0000 0000 0000 0000 0000 0001 0011 1001
+*      SRL 12   =>                             1    3    9
+         SRL       10,12        Shift 12 bits (3 bytes) to the right
+         CVD       10,DBLWORD   Go to Pack decimal
+* Don't use SRP cause lost of precision
+*        SRP       DBLWORD,64-3,5  Shift 3 digits to right (/1000)
+         AP        TOTCPUD,DBLWORD Add to total DDF
+         CLC       OQWHCCV,=CL4'R4ZC'   /*corrid =job/tran name*/
+         BNE       FNSELREC
+         AP        TOTCPU,DBLWORD Add to total selection
+*        AR        11,10        Add  r10 to r11
+* End processing accounting records
+* Write SMF101
+* OK on a choisi ce record
+         A         9,=F'1'   Increment R9 by 1
+*        PUT       SMFOU101,SM101
+         B         FNSELREC
+SEL100   DS        0H               Reconduct SMF100 records
+         USING     SM100,4          adressability
+         CLI       SM100RTY,X'64'       IS THIS SMF100 ?
+         BNE       FNSELREC             NO READ NEXT RECORD
+*        PUT       SMFOU100,SM100
+         B         FNSELREC
+*----------------------------------------------------------*
+*       ZONES POUR EDITION                                 *
+*----------------------------------------------------------*
+MASK10DG DC        X'40202020202020202020' MASK 10 DIGITS
+MASK12DG DC        X'212020202020204B202020202020'
+TOTRD    DS        CL10             NBR RECORDS READ
+TOTWR    DS        CL10             NBR RECORDS WRITTEN
+         DS        0H               HALF WORD ALIGNMENT
+WTOBLOC2 DC        H'50'
+         DC        H'0'
+PRTTXT   DS        CL18
+PRTVAL   DS        CL14
+*----------------------------------------------------------*
+*- FILE SECTION                                           -*
+*----------------------------------------------------------*
+*----------------------------------------------------------*
+SMFIN    DCB   DDNAME=SMFIN,                                           X
+               DSORG=PS,                                               X
+               MACRF=GL,                                               X
+               EODAD=ENDFILE,                                          X
+               BFTEK=A,                                                X
+               RECFM=VBS,BUFNO=20
+SMFOU100 DCB   DDNAME=SMFOU100,                                        X
+               DSORG=PS,                                               X
+               MACRF=PM,                                               X
+               LRECL=32767,                                            X
+               RECFM=VBS,                                              X
+               BLKSIZE=27998
+SMFOU101 DCB   DDNAME=SMFOU101,                                        X
+               DSORG=PS,                                               X
+               MACRF=PM,                                               X
+               LRECL=32767,                                            X
+               RECFM=VBS,                                              X
+               BLKSIZE=27998
+SNAPDD   DCB   DSORG=PS,RECFM=VBA,MACRF=W,LRECL=125,BLKSIZE=882,       X
+               DDNAME=SNAPDD
+*----------------------------------------------------------*
+*- WORKING STORAGE SECTION                                -*
+*----------------------------------------------------------*
+SAVE     DS        18F
+OQWHCCV  DS        CL4
+FLLWORD  DS        F   Full word
+DBLWORD  DS        D   work
+BEGINW   DS    0H
+         DC        CL8'DDDDDDDD'
+TOTCPUD  DS        D   Total CPu Ddf
+TOTCPU   DS        D   Total CPu Db2
+LASTW    DS    0H
+OTOTCPU  DS        CL14             TOT CPU
+PTOTCPU  DS        PL7              TOT CPU
+         DC        CL8'FFFFFFFF'
+*----------------------------------------------------------*
+*- DSECT/MACRO     SECTION                                -*
+*----------------------------------------------------------*
+SMFTYPDA DS        0H
+         DSNDQWAS  DSECT=YES,SUBTYPE=
+SMFSUM CSECT
+SELFDEFS DS        0H
+         DSNDQWA0  DSECT=YES Self defined
+SMFSUM CSECT
+SMFTYPDB DS        0H
+         DSNDQWST  DSECT=YES,SUBTYPE=
+SMFSUM CSECT
+PRODSECT DS        0H  Production Standard header
+         DSNDQWHS  DSECT=YES
+SMFSUM CSECT
+PRODSEC2 DS        0H Production Header type 2 for correlation Id
+         DSNDQWHC  DSECT=YES
+SMFSUM CSECT
+ACCTSEC  DS        0H Accounting ifcid3
+         DSNDQWAC  DSECT=YES
+SMFSUM CSECT
+LAST     DS    CL1
+         END       BEGIN
+//SYSLIB   DD  DSN=SYS1.MACLIB,DISP=SHR                                 00028600
+//         DD  DSN=SYSM.DB2.SDSNMACS,DISP=SHR                           00028700
+//SYSLIN   DD  DSN=&&LOADSET,DISP=(MOD,PASS),UNIT=SYSDA,                00028800
+//             SPACE=(TRK,(15,15)),DCB=(BLKSIZE=800)                    00028900
+//SYSPRINT DD  SYSOUT=*                                                 00029000
+//SYSUDUMP DD  SYSOUT=*                                                 00029100
+//SYSUT1   DD  SPACE=(TRK,(45,15),,,ROUND),UNIT=SYSDA                   00029200
+//*                                                                     00029300
+//*            LINKEDIT IF THE PRECOMPILER AND ASSEMBLER                00029400
+//*            RETURN CODES ARE 4 OR LESS                               00029500
+//*                                                                     00029600
+//LKED    EXEC PGM=IEWL,PARM='XREF',COND=(4,LT,ASM)                     00029700
+//SYSLIB   DD  DUMMY                                                    00029800
+//SYSLIN   DD  DSN=&&LOADSET,DISP=(OLD,DELETE)                          00029900
+//SYSLMOD  DD  DSN=M908075.DB2.LOAD(SMFSUM),DISP=SHR                    00030000
+//SYSPRINT DD  SYSOUT=*                                                 00030100
+//SYSUDUMP DD  SYSOUT=*                                                 00030200
+//SYSUT1   DD  SPACE=(1024,(50,50)),UNIT=SYSDA                          00030300
+//                                                                      00030400
+//                                                                      00030400
+//DEL01 EXEC PGM=IEFBR14
+//DD01    DD UNIT=SYSDA,SPACE=(TRK,1),DISP=(MOD,DELETE),
+//      DSN=SYSTMP.WSYNGUD.SMFEXTA
+//DD02    DD UNIT=SYSDA,SPACE=(TRK,1),DISP=(MOD,DELETE),
+//      DSN=SYSTMP.WSYNGUD.SMFEXTS
+//*
+//SMFSUM    EXEC PGM=SMFSUM,REGION=4M,COND=(4,LT)                       00030400
+//STEPLIB   DD   DISP=SHR,DSN=SYSPRM.WSYNGUD.LOAD                       00030500
+//SYSOUT    DD   SYSOUT=*                                               00030600
+//SMFIN     DD   DISP=SHR,DSN=SYSPRM.WSYNGUD.LIM.SMFEXTA2               00031000
+//*MFOU101 DD DSN=SYSTMP.WSYNGUD.SMFEXTA,
+//*        DISP=(NEW,CATLG,DELETE),
+//*        SPACE=(CYL,(6,6),RLSE),UNIT=SYSDA
+//SMFOU100 DD DSN=SYSTMP.WSYNGUD.SMFEXTS,
+//         DISP=(NEW,CATLG,DELETE),
+//         SPACE=(CYL,(6,6),RLSE),UNIT=SYSDA
+//OUTDD     DD   SYSOUT=*                                               00040000
+//SNAPDD    DD   SYSOUT=*                                               00040000
