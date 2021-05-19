@@ -1,2 +1,2 @@
 # Db2z
-Db2 z rexx codes 
+Db2 z rexx & assembler codes to process smf ifi ...
