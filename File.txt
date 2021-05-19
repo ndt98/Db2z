@@ -147,12 +147,7 @@ SELREC   CLI       SM100RTY,X'65'       IS THIS SMF101 ?
          SRLG      11,11,12     SHIFT 12 BITS (3 BYTES) TO THE RIGHT
          SGR       10,11
          CVDG      10,DBLWORD2  Can have truncation if very large value 
-* -----------------------------
-* cl1 tcb time into R10
-* -----------------------------
-*        L         10,QWACEJST+4 /* End tcb time*/
-*        MVC       FLLWORD,QWACBJST+4 /* Beg tcb time*/
-*        S         10,FLLWORD
+
 * -----------------------------
 * cl2 tcb time into R10
 * -----------------------------
@@ -171,7 +166,7 @@ SELREC   CLI       SM100RTY,X'65'       IS THIS SMF101 ?
 *        CVD       10,DBLWORD   Go to Pack decimal
 * Don't use SRP cause lost of precision
 *        SRP       DBLWORD,64-3,5  Shift 3 digits to right (/1000)
-* Write out the value
+* Write out the value for debug 
          MVC       OTOTCPU,MASK12DG
          ED        OTOTCPU,DBLWORD
          PUT       OUTDD,OTOTCPU
