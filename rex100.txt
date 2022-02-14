@@ -1,5 +1,7 @@
 /*REXX*/
 numeric digits 15
+totdif_DistTcb=0
+totdif_DistSrb=0
 /*-------------------------------------------------------------*/
 /* Extract SMF 100 records - written by Nguyen Duc Tuan        */
 /*                                      ndt.db2àgmail.com      */
@@ -47,10 +49,16 @@ numeric digits 15
 /*  07 Nov 2020     Display_Detail to have details on pagein   */
 /*  10 Feb 2021     Global Locks                               */
 /*  11 MAr 2021     ChangeLock & Unlock - Async Global Lock (LK)*/
+/*  25 May 2021     Correction bufferpools figures+ Zos stats  */
+/*  25 Jan 2022     More log manager stats                     */
 /*-------------------------------------------------------------*/
 /*Comment : Change datasets high level identifier              */
 /*-------------------------------------------------------------*/
-ARG SSID hlq smforig Alert BpSim
+ARG SSID hlq smforig Alert BpSim NoHead StatOnly
+If NoHead  ='NOHEAD' then NoHead=1
+                     else NoHead=0
+If StatOnly='STATONLY' then StatOnly=1
+                       else StatOnly=0
 retcode=0
 /* Display Warning messages (best practices)*/
 if Alert ='' then Alert='Y'
@@ -73,27 +81,37 @@ do
 end
  
 /* Report dataset on output (general stats) */
-oufl = "'" !! hlq !! '.reports.' !! ssid !! '.CSV' !! "'"
+oufl = "'" !! hlq !! '.reports.' !! ssid'.S01' !!  "'"
+x=OUTTRAP(TMP.)
 "DELETE" oufl "PURGE"
+x=OUTTRAP(OFF)
  
 /* Report dataset on output (BP stats) */
 oufl2= "'" !! hlq !! '.reportsb.' !! ssid !!  '.CSV' !! "'"
+x=OUTTRAP(TMP.)
 "DELETE" oufl2 "PURGE"
+x=OUTTRAP(OFF)
  
 /* Report dataset on output (GBP stats) */
 oufl5= "'" !! hlq !! '.reportsg.' !! ssid !! '.CSV' !! "'"
+x=OUTTRAP(TMP.)
 "DELETE" oufl5 "PURGE"
+x=OUTTRAP(OFF)
  
 /* Report dataset on output (STOR stats) */
 oufl3= "'" !! hlq !! '.reportst.' !! ssid !! '.CSV' !! "'"
+x=OUTTRAP(TMP.)
 "DELETE" oufl3 "PURGE"
+x=OUTTRAP(OFF)
  
 /* Report dataset on output (BP Simulation stats) */
 oufl4= "'" !! hlq !! '.repSimBP.' !! ssid !! '.CSV' !! "'"
+x=OUTTRAP(TMP.)
 "DELETE" oufl4 "PURGE"
+x=OUTTRAP(OFF)
  
 "ALLOC FI(OUFL) DA("oufl") NEW CATALOG REUSE" ,
-"LRECL(1900) RECFM(V B) TRACKS SPACE(50,50)"
+"lrecl(1800) RECFM(V B) TRACKS SPACE(200,200)"
 RcAlloc = rc
 if RcAlloc <> 0 then Do
      say "**********************************************"
@@ -102,57 +120,61 @@ if RcAlloc <> 0 then Do
      say "**********************************************"
      Exit 8
 end
- 
-"ALLOC FI(OUFL2) DA("oufl2") NEW CATALOG REUSE" ,
-"LRECL(500) RECFM(V B) TRACKS SPACE(50,50)"
-RcAlloc = rc
-if RcAlloc <> 0 then Do
-     say "**********************************************"
-     say "   Error allocating report file" oufl2 RcAlloc
-     say "   Abnormal end  "
-     say "**********************************************"
-     Exit 8
-end
- 
-"ALLOC FI(OUFL5) DA("oufl5") NEW CATALOG REUSE" ,
-"LRECL(130) RECFM(V B) TRACKS SPACE(50,50)"
-RcAlloc = rc
-if RcAlloc <> 0 then Do
-     say "**********************************************"
-     say "   Error allocating report file" oufl5 RcAlloc
-     say "   Abnormal end  "
-     say "**********************************************"
-     Exit 8
-end
- 
-"ALLOC FI(OUFL3) DA("oufl3") NEW CATALOG REUSE" ,
-"LRECL(200) RECFM(V B) TRACKS SPACE(10,10)"
-RcAlloc = rc
-if RcAlloc <> 0 then Do
-     say "**********************************************"
-     say "   Error allocating report file" oufl3 RcAlloc
-     say "   Abnormal end  "
-     say "**********************************************"
-     Exit 8
-end
- 
-if BPSim = 'Y' then
+if ç StatOnly then
 do
-    "ALLOC FI(OUFL4) DA("oufl4") NEW CATALOG REUSE" ,
-    "LRECL(200) RECFM(V B) TRACKS SPACE(90,15)"
-    RcAlloc = rc
-    if RcAlloc <> 0 then Do
-         say "**********************************************"
-         say "   Error allocating report file" oufl3 RcAlloc
-         say "   Abnormal end  "
-         say "**********************************************"
-         Exit 8
-    end
-end
+  "ALLOC FI(OUFL2) DA("oufl2") NEW CATALOG REUSE" ,
+  "LRECL(500) RECFM(V B) TRACKS SPACE(50,50)"
+  RcAlloc = rc
+  if RcAlloc <> 0 then Do
+       say "**********************************************"
+       say "   Error allocating report file" oufl2 RcAlloc
+       say "   Abnormal end  "
+       say "**********************************************"
+       Exit 8
+  end
+ 
+  "ALLOC FI(OUFL5) DA("oufl5") NEW CATALOG REUSE" ,
+  "LRECL(130) RECFM(V B) TRACKS SPACE(50,50)"
+  RcAlloc = rc
+  if RcAlloc <> 0 then Do
+       say "**********************************************"
+       say "   Error allocating report file" oufl5 RcAlloc
+       say "   Abnormal end  "
+       say "**********************************************"
+       Exit 8
+  end
+ 
+  "ALLOC FI(OUFL3) DA("oufl3") NEW CATALOG REUSE" ,
+  "LRECL(200) RECFM(V B) TRACKS SPACE(10,10)"
+  RcAlloc = rc
+  if RcAlloc <> 0 then Do
+       say "**********************************************"
+       say "   Error allocating report file" oufl3 RcAlloc
+       say "   Abnormal end  "
+       say "**********************************************"
+       Exit 8
+  end
+ 
+  if BPSim = 'Y' then
+  do
+      "ALLOC FI(OUFL4) DA("oufl4") NEW CATALOG REUSE" ,
+      "LRECL(200) RECFM(V B) TRACKS SPACE(90,15)"
+      RcAlloc = rc
+      if RcAlloc <> 0 then Do
+           say "**********************************************"
+           say "   Error allocating report file" oufl3 RcAlloc
+           say "   Abnormal end  "
+           say "**********************************************"
+           Exit 8
+      end
+  end
+end /* StaOnly */
+ 
 /* init counters */
 call init_var
 /* WRITE report header */
-CALL write_header
+if ç NoHead then
+  Call WriteHeader
  
 /* START PROCESSING */
 DO FOREVER
@@ -282,6 +304,9 @@ end
  
 /* report ifcid read */
 call report_ifcid
+say "Total DistTcb=" totdif_DistTcb
+say "Total DistSrb=" totdif_DistSrb
+say ""
 say "Input records =" reci
 say "Output records=" reco
 say 'SMF period : ' min_date "/" max_date min_time "/" max_time
@@ -388,7 +413,14 @@ DSNDQWS0:
   /*  OFFSET TO THE DATA SECTION MAPPED BY DSNDQLST */
   /*  DDF STATS BY LOCATION */
   QWS00RAO = C2D(SUBSTR(InpRec,Ofs,4))
-  Ofs = Ofs + 8
+  Ofs = Ofs + 4
+  QWS00RAL= C2D(SUBSTR(InpRec,Ofs,2))
+  Ofs = Ofs + 4
+  SvOfs = Ofs
+  Ofs = QWS00RAO - 3
+  if QWS00RAO > 0 then
+  call DSNDQLST
+  Ofs = SvOfs
   /*  OFFSET TO THE DATA SECTION MAPPED BY DSNDQJST */
   /*  LOG MANAGER           */
   QWS00RBO = C2D(SUBSTR(InpRec,Ofs,4))
@@ -409,6 +441,7 @@ DSNDQWS0:
   /*  ZOS STATS             */
   QWS00RDO = C2D(SUBSTR(InpRec,Ofs,4))
   Ofs = Ofs + 8
+  SvOfs = Ofs
   if  QWS00RDO > 0 then
   do
     Ofs = QWS00RDO - 3
@@ -516,6 +549,7 @@ numeric digits 15
            QW0225AX_dbm1 = C2D(SUBSTR(InpRec,OfsD,8))
            OfsD=OfsD+8
            /* QW0225HVPagesInReal 64 bits private Real */
+           /* HV = High Virtual  */
            QW0225HVPagesInReal =  C2D(SUBSTR(InpRec,OfsD,8))
            OfsD=OfsD+8
            /* QW0225HVAuxSlots    64 bits private Aux */
@@ -624,11 +658,11 @@ numeric digits 15
           /* QW0225ComStg_Real Real in use 64 bit shared */
           /* QW0225SHRINREAL   Real in use 64 bit common */
  
-      /*  if MaxRealLPAR  <  TotalRealUsedByLPAR then */
-      /*       do                                     */
-      /*           MaxRealLPAR = TotalRealUsedByLPAR  */
-      /*           time_MaxRealLPAR = run_fmt_time    */
-      /*       end                                    */
+          if MaxRealLPAR  <  TotalRealUsedByLPAR then
+               do
+                   MaxRealLPAR = TotalRealUsedByLPAR
+                   time_MaxRealLPAR = run_fmt_time
+               end
  
           OfsD=OfsD + 40
           QW0225_REALAVAIL =C2D(SUBSTR(InpRec,OfsD,4))
@@ -1314,7 +1348,10 @@ DSNDQ3ST:
     Ofs = Ofs + 4
     /* Aborts */
     Q3STABRT = C2D(SUBSTR(InpRec,Ofs,4))
-    Ofs = Ofs + 4*9
+    Ofs = Ofs + 28
+    /* Create Thread queued */
+    Q3STCTHW = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 8
     /* HWM   IDBACK*/
     Q3STHWIB = C2D(SUBSTR(InpRec,Ofs,4))
     Ofs = Ofs + 4
@@ -1327,6 +1364,59 @@ DSNDQ3ST:
  
 DSNDQJST:
     Ofs=Ofs+4
+    /* eye catcher */
+    eyec     = SUBSTR(InpRec,Ofs,4)
+    if ( eyec     <> 'QJST' ) then
+                  do
+                      say 'DSNDQJST eye catcher not met, error'
+                      exit(8)
+                  end
+    Ofs=Ofs+4
+    /* Write Wait   */
+    QJSTWRW = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* Write No wait = nb log records  (good) */
+    QJSTWRNW = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* Write Force  (Not Good as does not include force to commit) */
+    QJSTWRF= C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* Wait Output Buffer unavailable   */
+    QJSTWTB  = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* Read from OutBuf */
+    QJSTRBUF = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* Read from Active */
+    QJSTRACT = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* Read from Archive*/
+    QJSTRARH = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* Delays from Tape volume contention */
+    QJSTTVC  = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* Read BSDS */
+    QJSTBSDS = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs=Ofs+4
+    /* active log output CI created */
+    QJSTBFFL = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 8
+    /* Archive log Read allocations */
+    QJSTALR  = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 8
+    /* CI offloaded */
+    QJSTCIOF = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 4
+    /* Read access delayed due to unav resource*/
+    QJSTWUR  = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 32
+    /* Page In Log Output Buff*/
+    QJSTBPAG = C2D(SUBSTR(InpRec,Ofs,4))
+    return
+ 
+DSNDQLST:
+    return
     /* eye catcher */
     eyec     = SUBSTR(InpRec,Ofs,4)
     if ( eyec     <> 'QJST' ) then
@@ -1537,10 +1627,13 @@ DSNDQXST:
     Ofs     =  Ofs + 8
     /*£ Insert Algorithm 2 */
     QXRWSINSRTDAlg2=C2D(SUBSTR(InpRec,Ofs,8))
-    Ofs     =  Ofs + 24
-    /*£ Runtime Adaptive Index used :RID List not used*/
-    QXRSDMAD=C2D(SUBSTR(InpRec,Ofs,8))
-    Ofs     =  Ofs + 096
+    Ofs     =  Ofs + 56
+    /*£ RDS Sort */
+    QXSTSRT =C2D(SUBSTR(InpRec,Ofs,8))
+    Ofs     =  Ofs + 8
+    /*£ RDS Sort used by Accelerator (SORTL)*/
+    QXSTSRTL=C2D(SUBSTR(InpRec,Ofs,8))
+    Ofs     =  Ofs + 120
     /*£ MIAP not used RID List could not be used */
     QXRFMIAP=C2D(SUBSTR(InpRec,Ofs,8))
 return
@@ -1579,84 +1672,171 @@ GET_FMT_TIME:
   RETURN
  
  
-write_header:
-  say 'CSV file ' oufl     ' will be produced'
+WriteHeader:
+say 'CSV file ' oufl     ' will be produced'
+Lpax=MVSVAR(SYSNAME)
+If substr(lpax,1,2) <> 'CR' then
+do
   outrec.0= 1
   outrec.1= ,
-        "Lpar,ssid,date,time,Hour,MstrTCB,MstrSRB,MstrPSRB,"!!,
-         "MstrPSRB_Ziip,Dbm1TCB,DBm1SRB,DBm1PSRB,Dbm1PSRB_Ziip,"!!,
-                       "IrlmTCB,IrlmSRB,IrlmPSRB,IrlmPSRB_Ziip,"!!,
-                       "DistTCB,DistSRB,DistPSRB,DistPSRB_Ziip,"!!,
-         "Chkpt,"!!,
-         "CrtThd,Sign,Term,Comm1,Comm2,Abort,MaxIDBACK,"!!,
-         "MaxIDFOR,MaxCTHREAD,"!!,
-         "AutBndPlA,AutBndPlS,AutBndPkA,AutBndPkS,"!!,
-         "DSCur,DSClose,RWROSwitch,DSOpen,"!!,
-         "Getpage,GpSeq,Syncio,Pgwritten,SyncWr,AsyncWr,"!!,
-         "PageInR,PageInW,"!!,
-         "CastPg,CastIO,SprefIO,DynPrfIO,LstPrfIO,BpSio,"!!,
-         "NbSQLLocalCach,HWMLocCach,AlloLocCach,"!!,
-         "AlloGlobCachDyn,AlloGlobCachStatic,"!!,
+        "Lp,ssi,date,time,Hr,MstrTcb,MsSrb,MsPSrb,"!!,
+         "MsPSrbZi,Dbm1Tcb,DbSrb,DbPSrb,DbPSrbZi,"!!,
+                       "IrlmTcb,IrSrb,IrPSrb,IrPSrbZi,"!!,
+                       "DistTcb,DstSrb,DstPSrb,DstPSrbZi,"!!,
+         "Ckp,"!!,
+         "CrTd,Sign,Term,Com1,Com2,Abrt,CrTdQd,MxIdBck,"!!,
+         "MxIdfr,MxCtd,"!!,
+         "AuBdPlA,AuBdPlS,AuBdPkA,AuBdPkS,"!!,
+         "DsCu,DsClo,ROSwch,DsOpe,"!!,
+         "Gp,GpSq,SynIo,PgWriten,SynWr,AsyWr,"!!,
+         "PgInR,PgInW,"!!,
+         "CasPg,CasIO,SPrfIO,DyPrfIO,LstPrfIO,BpSio,"!!,
+         "NbSqlLocCch,HwmLocCch,AloLocCch,"!!,
+         "AloGlbCchDy,AloGlbCchStic,"!!,
        /* Distributed data */,
-         "DbatRejConMax,"!!,
-         "CurInac1,MaxInac1,CurActDbat,MaxActDbat,MaxAllDbat,"!!,
-         "CurInac2Con,MaxInac2Con,CurT2Qd,MaxT2Qd,"!!,
-         "MinQTime,MxQTime,AvgQTime,"!!,
-         "ThdCrDbat,ThdReuDbat,"!!,
-         "CurAldThds,ThdMaxComp,ThdMaxComp2,"!!,
+         "DbatRjCnMx,"!!,
+         "CuInac1,MxIn1,CuActDbat,MxActDbat,MxAllDbat,"!!,
+         "CuIn2Cn,MxIn2Cn,CuT2Qd,MxT2Qd,"!!,
+         "MnQTme,MxQTme,AvQTme,"!!,
+         "TdCrDbt,TdReuDbt,"!!,
+         "CuAldTd,TdMxComp,TdMxComp2,"!!,
        /* Storage data*/,
-         "TotRealUsedDB2,TotAuxUsedDB2,"!!,
-         "TotRealUsedBP,TotAuxUsedBP,RealAvail,"!!,
-         "ExtRegionSz,31bAvail,StorBefContrac,"!!,
-         "FullContractions,StorCrit,NbAbndsStor,"!!,
-         "NotOptColProc,"!!,
+         "TotReaUsDb2,TotAxUsDb2,"!!,
+         "TotReaUsBp,TotAxUsBp,ReaAvl,"!!,
+         "XRgSz,31Avl,StoBfCnt,"!!,
+         "FulCnt,StoCri,NbAbSto,"!!,
+         "NoOptColP,"!!,
       /* Workfiles block */ ,
-         "32KbUsed4Prf,4KbUsed32Prf,MaxWfKB,"!!,
-         "CurWfKB,Cur4KWfKB,Cur32KWfKB,"!!,
-         "CurDMInMemWfNb,CurDMInMemWfKB,"!!,
-         "CurSRInMemWfNb,CurSRInMemWfKB,"!!,
-         "CurRIDsOvfWf,CurNonSRTWfNb,"!!,
-         "NbPhysWfCrt,MaxWfUsedThdKB,"!!,
-         "AllWfConfKB,DGTTWfConfKB,"!!,
-         "OthWfConfKB,"!!,
-         "CurDGTTUseKB,MaxDGTTUseKB,"!!,
-         "CurOthUseKB,MaxOthUseKB,"!!,
+         "32KU4Prf,4KUs32Prf,MxWfKb,"!!,
+         "CuWfKb,Cu4KWfKb,Cu32KWfKb,"!!,
+         "CuDMnMWfNb,CuDMnMWfKb,"!!,
+         "CuSRInMWfNb,CuSRInMWfKb,"!!,
+         "CuRIDsOvfWf,CuNonSRTWfNb,"!!,
+         "NbPhyWfCrt,MxWfUsTdKb,"!!,
+         "AllWfCnfKb,DGTWfCnfKb,"!!,
+         "OthWfCnfKb,"!!,
+         "CuDGTUsKb,MxDGTUsKb,"!!,
+         "CuOthUsKb,MxOthUsKb,"!!,
      ,/* EDM Pool block  */
-        "MaxRIDBlocks,"!!,
-        "ReqCT,LoadCT,ReqDBD,LoadDBD,ReqPT,LoadPT,ReqDynCach,"!!,
-         "InsDynC,"!!,
-         "DBDPg,DBDFree,DBDStealable,FailDBDFul,STMPoolPg,"!!,
-         "StmtFree,"!!,
-         "FailStmFul,SKelPg,SKelFree,SkelStealable,FailSkFul,"!!,
+        "MxRIDBlks,"!!,
+        "RqCT,LodCT,RqDBD,LodDBD,RqPT,LodPT,RqDyCch,"!!,
+        "InsDyC,"!!,
+        "DBDPg,DBDFre,DBDSteal,FailDBFul,StmPooPg,"!!,
+        "StmFre,"!!,
+        "FailStFul,SkPg,SkFre,SkSteal,FailSkFul,"!!,
     ,/* Locks           */
-         "DdLock,TimO,EscS,EscX,MaxPgRLckd,SuspLtch,SuspOth,"!!,
-         "LocalSuspLock,LockRq,UnLkRq,ChgRq,OthRq,"!!,
-         "ClaimRq,DrainRq,"!!,
+         "DedLk,TimO,EscS,EscX,MxPgRLckd,SusLtch,SusOth,"!!,
+         "LocSusLck,LckRq,ULkRq,ChgRq,OthRq,"!!,
+         "ClmRq,DrnRq,"!!,
     ,/* Global locks    */
-         "SyncLockRq2XES,SyncChgRq2XES,SyncUnlReq2XES,AsynIRLM2XES,"!!,
-         "SuspIrlmGlbCont,"!!,
-         "SuspXESCont,SuspHeurConv,TotGlbSusp,"!!,
+         "SynLckRq2XES,SynChgRq2XES,SynUnlRq2XES,AsyIRLM2XES,"!!,
+         "SusIrlmGbCnt,"!!,
+         "SusXESCnt,SusHeuCnv,TotGbSus,"!!,
     ,/* RID Pool block  */
-         "Sel,Ins,Upd,Del,Fetch,"!!,
-         "Prepare,ShortP,ImplP,AvoidP,PrepMAXKD,"!!,
-         "RIDFailStor,RIDFailLim,RIDOvflStor,RIDOvflLim,"!!,
-         "RIDHybFailStor,RIDHybFailLim,"!!,
+         "Sel,Ins,Upd,Del,Ftch,"!!,
+         "Prep,ShrtP,ImplP,AvoidP,PrepMxKD,"!!,
+         "RIDFailSto,RIDFailLim,RIDOvfSto,RIDOvfLim,"!!,
+         "RIDHybFailSto,RIDHybFailLim,"!!,
          "RIDTrmRDS,RIDTrmDM,"!!,
-         "IWFNoStor,IAG1,IAG2,RIDLstNO,"!!,
+         "IWFNoSto,IAG1,IAG2,RIDLstNO,"!!,
     ,/* FTB & IAG2 V12 features */
-         "IAG2Alloc,IAG2Dis,FTBMinThres,FTBElig,FTBCand,"!!,
-         "FTBSize,FTBPrev,FtbCur,IAG2EnabAtt,IAG2AttSuc,"!!,
+         "IAG2Aloc,IAG2Dis,FTBMnThres,FTBElig,FTBCand,"!!,
+         "FTBSz,FTBPrev,FtbCu,IAG2EnA,IAG2EnS,"!!,
     ,/* Logging */
-         "LogRec-WrNW,WriteW,WriteForce,ActLogCI,CIOff,"!!,
-         "LogRBuf,LogRAct,LogRArc,TapeCont,BSDSRead,"!!,
-    ,/*ZOS Stats*/
-         "CpuLpar,CpuDB2,PageInLpar,PageInDB2,RealLpar,RealFree,"!!,
-         "RealDB2Mb,UIC"
+         "LogWrNW,WriteW,WrFor,ActLgCI,CIOff,"!!,
+         "LgRBuf,LgRAct,LgRArc,TapeCnt,BsdsR,"!!,
+         "LgRArcAl,LgRDlayResUnv,"!!,
+    ,/*ZOS Stats from RMF Api */
+         "NbCpLp,Cpu%Lp,CpuDb2,CpuMstr,CpuDbm1,"!!,
+         "PgInLp,PgInDb2,ReaLpMb,ReaFree,"!!,
+         "ReaDb2Mb,VirtLp,VirtFre,VirtDb2,"!!,
+         "UIC"
      /*  Zones below correspond to the ibm provided excel columns */
      /*  "Z,BE,CV,CX,CZ,CU,CW,CY,CQ,Y,BD"  */
+end
+else do
+  /* Cas BPCR couper le header en 2 */
+  outrec.0= 2
+  outrec.1= ,
+        "Lp,ssi,date,time,Hr,MstrTcb,MsSrb,MsPSrb,"!!,
+         "MsPSrbZi,Dbm1Tcb,DbSrb,DbPSrb,DbPSrbZi,"!!,
+                       "IrlmTcb,IrSrb,IrPSrb,IrPSrbZi,"!!,
+                       "DistTcb,DstSrb,DstPSrb,DstPSrbZi,"!!,
+         "Ckp,"!!,
+         "CrTd,Sign,Term,Com1,Com2,Abrt,CrTdQd,MxIdBck,"!!,
+         "MxIdfr,MxCtd,"!!,
+         "AuBdPlA,AuBdPlS,AuBdPkA,AuBdPkS,"!!,
+         "DsCu,DsClo,ROSwch,DsOpe,"!!,
+         "Gp,GpSq,SynIo,PgWriten,SynWr,AsyWr,"!!,
+         "PgInR,PgInW,"!!,
+         "CasPg,CasIO,SPrfIO,DyPrfIO,LstPrfIO,BpSio,"!!,
+         "NbSqlLocCch,HwmLocCch,AloLocCch,"!!,
+         "AloGlbCchDy,AloGlbCchStic,"!!,
+       /* Distributed data */,
+         "DbatRjCnMx,"!!,
+         "CuInac1,MxIn1,CuActDbat,MxActDbat,MxAllDbat,"!!,
+         "CuIn2Cn,MxIn2Cn,CuT2Qd,MxT2Qd,"!!,
+         "MnQTme,MxQTme,AvQTme,"!!,
+         "TdCrDbt,TdReuDbt,"!!,
+         "CuAldTd,TdMxComp,TdMxComp2,"!!,
+       /* Storage data*/,
+         "TotReaUsDb2,TotAxUsDb2,"!!,
+         "TotReaUsBp,TotAxUsBp,ReaAvl,"!!,
+         "XRgSz,31Avl,StoBfCnt,"!!,
+         "FulCnt,StoCri,NbAbSto,"!!,
+         "NoOptColP,"!!,
+      /* Workfiles block */ ,
+         "32KU4Prf,4KUs32Prf,MxWfKb,"!!,
+         "CuWfKb,Cu4KWfKb,Cu32KWfKb,"!!,
+         "CuDMnMWfNb,CuDMnMWfKb,"!!,
+         "CuSRInMWfNb,CuSRInMWfKb,"!!,
+         "CuRIDsOvfWf,CuNonSRTWfNb,"!!,
+         "NbPhyWfCrt,MxWfUsTdKb,"!!,
+         "AllWfCnfKb,DGTWfCnfKb,"!!,
+         "OthWfCnfKb,"!!,
+         "CuDGTUsKb,MxDGTUsKb,"!!,
+         "CuOthUsKb,MxOthUsKb,"!!,
+     ,/* EDM Pool block  */
+        "MxRIDBlks,"!!,
+        "RqCT,LodCT,RqDBD,LodDBD,RqPT,LodPT,RqDyCch,"!!,
+        "InsDyC,"
+    outrec.2=,
+        "DBDPg,DBDFre,DBDSteal,FailDBFul,StmPooPg,"!!,
+        "StmFre,"!!,
+        "FailStFul,SkPg,SkFre,SkSteal,FailSkFul,"!!,
+    ,/* Locks           */
+         "DedLk,TimO,EscS,EscX,MxPgRLckd,SusLtch,SusOth,"!!,
+         "LocSusLck,LckRq,ULkRq,ChgRq,OthRq,"!!,
+         "ClmRq,DrnRq,"!!,
+    ,/* Global locks    */
+         "SynLckRq2XES,SynChgRq2XES,SynUnlRq2XES,AsyIRLM2XES,"!!,
+         "SusIrlmGbCnt,"!!,
+         "SusXESCnt,SusHeuCnv,TotGbSus,"!!,
+    ,/* RID Pool block  */
+         "Sel,Ins,Upd,Del,Ftch,"!!,
+         "Prep,ShrtP,ImplP,AvoidP,PrepMxKD,"!!,
+         "RIDFailSto,RIDFailLim,RIDOvfSto,RIDOvfLim,"!!,
+         "RIDHybFailSto,RIDHybFailLim,"!!,
+         "RIDTrmRDS,RIDTrmDM,"!!,
+         "IWFNoSto,IAG1,IAG2,RIDLstNO,"!!,
+    ,/* FTB & IAG2 V12 features */
+         "IAG2Aloc,IAG2Dis,FTBMnThres,FTBElig,FTBCand,"!!,
+         "FTBSz,FTBPrev,FtbCu,IAG2EnA,IAG2EnS,"!!,
+    ,/* Logging */
+         "LogWrNW,WriteW,WrFor,ActLgCI,CIOff,"!!,
+         "LgRBuf,LgRAct,LgRArc,TapeCnt,BsdsR,"!!,
+         "LgRArcAl,LgRDlayResUnv,"!!,
+    ,/*ZOS Stats from RMF Api */
+         "NbCpLp,Cpu%Lp,CpuDb2,CpuMstr,CpuDbm1,"!!,
+         "PgInLp,PgInDb2,ReaLpMb,ReaFree,"!!,
+         "ReaDb2Mb,VirtLp,VirtFre,VirtDb2,"!!,
+         "UIC"
+end
  
   "EXECIO 1 DISKW OUFL (STEM OUTREC. "
  
+  if ç StatOnly then
+  do
   /*------------------------------*/
   /* Header for Buffer pool stats */
   /*------------------------------*/
@@ -1675,7 +1855,7 @@ write_header:
   outrec.1= ,
       "Lpar,Ssid,Date,Time,Hour,GBP,Gp,"!!,
       "GBPGp,XIRdFnd,XIRdNFnd,XIMissRatio,PgAsyncW,PgSyncW,"!!,
-      "PgCast,PgWrAro,AsynXI,SuspAsynXI"
+      "PgCast,PgWrAro,AsynXI,SusAsynXI"
  
   "EXECIO 1 DISKW OUFL5 (STEM OUTREC. "
  
@@ -1704,11 +1884,24 @@ write_header:
  
   "EXECIO 1 DISKW OUFL4 (STEM OUTREC. "
  
+  end /* StatOnly*/
+ 
   return
  
  
 write_report:
+    totdif_DistTcb=dif_DistTcb+totdif_DistTcb
+    totdif_DistSrb=dif_Distsrb+totdif_Distsrb
+ 
     reco= reco+ 1
+    /* allocate small datasets (to bypass mail limit)*/
+    select
+       when  reco = 6000 then call AllocS01
+       when  reco = 12000 then call AllocS02
+       when  reco = 18000 then call AllocS03
+       otherwise
+    end
+ 
     /* bypass first record because off difference calculation */
     if reco = 1 then return
     /* Warning messages or not ? */
@@ -1743,6 +1936,7 @@ write_report:
     !! Dif_Q3STPREP  !! ','        ,     /* Commit phase 1 */
     !! Dif_Q3STCOMM  !! ','        ,     /* Commit Ph 2*/
     !! Dif_Q3STABRT  !! ','        ,     /* Aborts */
+    !! Dif_Q3STCTHW  !! ','        ,     /* Wait Cthread*/
     !!     Q3STHWIB  !! ','        ,     /* Max IDBACK */
     !!     Q3STHWIF  !! ','        ,     /* Max IDFORE */
     !!     Q3STHWCT  !! ','        ,     /* Max CTHREAD */
@@ -1935,13 +2129,21 @@ write_report:
     !!     Dif_QJSTRARH             !! ',' , /* Log CI Offloaded */
     !!     Dif_QJSTTVC              !! ',' , /* Log CI Offloaded */
     !!     Dif_QJSTBSDS             !! ',' , /* Log CI Offloaded */
+    !!     Dif_QJSTALR              !! ',' , /* Log Arc Read Alloc*/
+    !!     Dif_QJSTWUR              !! ',' , /* Log R Delay ResUn*/
+    !!     QWOSLNCP                 !! ',' ,  /* Nb CPu    LPAR */
     !!     QWOSLPRU                 !! ',' ,  /* CPU util. LPAR */
     !!     QWOSDB2U                 !! ',' ,  /* CPU util. DB2 */
+    !!     QWOSMSTU                 !! ',' ,  /* CPU util. Mstr*/
+    !!     QWOSDBMU                 !! ',' ,  /* CPU util. Dbm1*/
     !!     QWOSLPIR                 !! ',' ,  /* Page in rate LPAR */
     !!     QWOSDPIR                 !! ',' ,  /* Page in DB2 */
-    !!     QWOSLRST                 !! ',' ,  /* Storage LPAR */
-    !!     QWOSLRSF                 !! ',' ,  /* Storage Free */
+    !!     QWOSLRST                 !! ',' ,  /* Real    LPAR */
+    !!     QWOSLRSF                 !! ',' ,  /* Real    Free */
     !!     QWOSDRSU                 !! ',' , /* Stor used by this Db2*/
+    !!     QWOSLVST                 !! ',' , /* Virt Stor Lpar       */
+    !!     QWOSLVSF                 !! ',' , /* Virt Stor Free       */
+    !!     QWOSDVSU                 !! ',' , /* Virt Stor Db2        */
     !!     QWOSLUIC                 !! ','    /* UIC */
   /*!! f2mb(qw0225ax_dbm1)          !! ',' ,
     !! f2mb(qw0225ax_Dist)          !! ',' ,
@@ -1957,7 +2159,7 @@ write_report:
     /* active thread =  QDSTCNAT +  QW0225AT */
   "EXECIO 1 DISKW OUFL (STEM OUTREC. "
  
- 
+If StatOnly=0 then do
   /*************************************/
   /* Second record for Detail Bufstats */
   /* Loop  for each bufferpool ID      */
@@ -2140,6 +2342,7 @@ write_report:
             "EXECIO 1 DISKW OUFL4 (STEM OUTREC. "
       end
   end  /* If BPSim='Y' */
+End /*If StatOnly=0 then do*/
  
 return
  
@@ -2210,7 +2413,13 @@ DSNDQWOS:
     Ofs = Ofs + 4
     /* CPU use. DB2       */
     QWOSDB2U = C2D(SUBSTR(InpRec,Ofs,4))
-    Ofs = Ofs + 12
+    Ofs = Ofs + 4
+    /* CPU use. MSTR      */
+    QWOSMSTU = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 4
+    /* CPU use. DBM1      */
+    QWOSDBMU = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 4
     /* Page in rate LPAR       */
     QWOSLPIR = C2D(SUBSTR(InpRec,Ofs,4))
     Ofs = Ofs + 4
@@ -2223,11 +2432,24 @@ DSNDQWOS:
     /* Real Stor. Free LPAR  (MB) */
     QWOSLRSF = C2D(SUBSTR(InpRec,Ofs,4))
     Ofs = Ofs + 4
-    /* Real Stor. used by this DB2 */
+    /* Real Stor. used by this Db1 Mb */
     QWOSDRSU = C2D(SUBSTR(InpRec,Ofs,4))
-    Ofs = Ofs + 16
+    Ofs = Ofs + 4
+    /* Virt Stor. on this Lpar */
+    QWOSLVST = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 4
+    /* Virt Stor. free on this Lpar */
+    QWOSLVSF = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 4
+    /* Virt Stor. used by Db2       */
+    QWOSDVSU = C2D(SUBSTR(InpRec,Ofs,4))
+    Ofs = Ofs + 4
     /* Real Stor. used by this DB2 */
     QWOSLUIC = C2D(SUBSTR(InpRec,Ofs,4))
+ /* Ofs = Ofs + 16  /* new 2021 */
+    /* Real Stor. used by this DB2 */
+    QWOSREAL = C2D(SUBSTR(InpRec,Ofs,8))
+    Say 'QWOSREAL' QWOSREAL */
     return
  
 dsndqist:
@@ -2505,7 +2727,7 @@ dsndqbst:
     /* Pages read seq Prefetch */
     QBSTSPP =  C2D(SUBSTR(InpRec,Ofs,8))
     Ofs = Ofs + 56
-    /* OF SEQ PREFETCH (ASYNCHRONOUS) READ*/
+    /* Nb SEQ PREFETCH (ASYNCHRONOUS) READ*/
     QBSTPIO =  C2D(SUBSTR(InpRec,Ofs,8))
     Ofs = Ofs + 16
     /* nb wkfile not created due to buffers resource */
@@ -2830,6 +3052,7 @@ ifcid_diff:
               Dif_Q3STPREP =     Q3STPREP-Old_Q3STPREP
               Dif_Q3STCOMM =     Q3STCOMM-Old_Q3STCOMM
               Dif_Q3STABRT =     Q3STABRT-Old_Q3STABRT
+              Dif_Q3STCTHW =     Q3STCTHW-Old_Q3STCTHW
  
           if  Dif_Q3STCTHD < 0 then
           do
@@ -2839,6 +3062,7 @@ ifcid_diff:
               Dif_Q3STPREP = Q3STPREP
               Dif_Q3STCOMM = Q3STCOMM
               Dif_Q3STABRT = Q3STABRT
+              Dif_Q3STCTHW = Q3STCTHW
           end
  
           Old_Q3STSIGN = Q3STSIGN
@@ -2847,6 +3071,7 @@ ifcid_diff:
           Old_Q3STPREP = Q3STPREP
           Old_Q3STCOMM = Q3STCOMM
           Old_Q3STABRT = Q3STABRT
+          Old_Q3STCTHW = Q3STCTHW
  
        /***************************/
        /* buffer pool stats       */
@@ -2860,8 +3085,10 @@ ifcid_diff:
       Dif_QJSTWRW = QJSTWRW - Old_QJSTWRW
       Dif_QJSTWRF  = QJSTWRF  - Old_QJSTWRF
       Dif_QJSTBFFL = QJSTBFFL - Old_QJSTBFFL
+      Dif_QJSTALR  = QJSTALR  - Old_QJSTALR
       Dif_QJSTWTB  = QJSTWTB  - Old_QJSTWTB
       Dif_QJSTCIOF = QJSTCIOF - Old_QJSTCIOF
+      Dif_QJSTWUR  = QJSTWUR  - Old_QJSTWUR
       Dif_QJSTBPAG = QJSTBPAG - Old_QJSTBPAG
       Dif_QJSTRBUF = QJSTRBUF - Old_QJSTRBUF
       Dif_QJSTRACT = QJSTRACT - Old_QJSTRACT
@@ -2873,12 +3100,14 @@ ifcid_diff:
               Dif_QJSTWRW = QJSTWRW
               Dif_QJSTWRF  = QJSTWRF
               Dif_QJSTBFFL = QJSTBFFL
+              Dif_QJSTALR  = QJSTALR
               Dif_QJSTRBUF = QJSTRBUF
               Dif_QJSTRACT = QJSTRACT
               Dif_QJSTRARH = QJSTRARH
               Dif_QJSTTVC  = QJSTTVC
               Dif_QJSTBSDS = QJSTBSDS
               Dif_QJSTCIOF = QJSTCIOF
+              Dif_QJSTWUR  = QJSTWUR
               Dif_QJSTBPAG = QJSTBPAG
               Dif_QJSTWTB  = QJSTWTB
       end
@@ -2891,8 +3120,10 @@ ifcid_diff:
       Old_QJSTTVC  = QJSTTVC
       Old_QJSTBSDS = QJSTBSDS
       Old_QJSTBFFL = QJSTBFFL
+      Old_QJSTALR  = QJSTALR
       Old_QJSTWTB  = QJSTWTB
       Old_QJSTCIOF = QJSTCIOF
+      Old_QJSTWUR  = QJSTWUR
       Old_QJSTBPAG = QJSTBPAG
  
       /****************************************/
@@ -3117,9 +3348,9 @@ DispVStor:
                           format(MinReal4K_Dist,5,2) 'MB at ',
          Date_MinReal4K_Dist time_MinReal4K_Dist
     Say ' '
- /* Say 'Max Real Storage used by LPAR :' MaxRealLPAR ' Frames --', */
- /*            f2mb(MaxRealLPAR)  ' in MB'                          */
- /* Say '       at ' time_MaxRealLPAR                               */
+    Say 'Max Real Storage used by LPAR :' MaxRealLPAR ' Frames --',
+               f2mb(MaxRealLPAR)  ' in MB'
+    Say '       at ' time_MaxRealLPAR
     temp=MinQW0225_REALAVAIL*4096 / 1048576      /* in MB*/
     Say 'Min Real Storage available for LPAR : ' MinQW0225_REALAVAIL,
                 'Frames --' f2mb(MinQW0225_REALAVAIL) ' MB'
@@ -3166,7 +3397,7 @@ init_var:
            MaxReal4K_Dist=0
            MinReal4K_Dist=999999999999999
            MinQW0225_REALAVAIL=999999999999999
-        /* MaxRealLPAR = 0 */
+           MaxRealLPAR = 0
            MaxDB2AuxUse = -1
       end
   /* init counters */
@@ -3204,6 +3435,7 @@ init_var:
   Old_QBSTRHS = 0
  
   Old_QJSTBFFL  = 0
+  Old_QJSTALR   = 0
   Old_QJSTWRNW  = 0
   Old_QJSTWRW  = 0
   Old_QJSTRBUF = 0
@@ -3214,6 +3446,7 @@ init_var:
   Old_QJSTWRF =0
   Old_QJSTWTB   = 0
   Old_QJSTCIOF  = 0
+  Old_QJSTWUR   = 0
   Old_QJSTBPAG  = 0
  
   Old_QISTRLLM  = 0
@@ -3281,6 +3514,7 @@ init_var:
   Old_Q3STPREP = 0
   Old_Q3STCOMM = 0
   Old_Q3STABRT = 0
+  Old_Q3STCTHW = 0
  
  
   Old_MstrTcb =       0
@@ -3684,7 +3918,6 @@ init_gbpstats:
      return
 switch_bpstats:
          /* new to Old only if new value exists */
-      if BufGet.j > 0  then do
          do i = 1 to NbBPEnt.0
             j = NbBPEnt.i
             oBufGet.j = BufGet.j
@@ -3705,7 +3938,6 @@ switch_bpstats:
             oBufHST.j = BufHST.j
             oBufRHS.j = BufRHS.j
          end   /* end do */
-      end /* end if ...*/
      return
 switch_bpstatx:
          /* new to Old only if new value exists */
@@ -3830,8 +4062,8 @@ CheckForAlert:
       if Dif_QXRFMIAP> 0     then
           do
              say 'Warning : RID list processing was not used',
-             '£'Dif_QXRFMIAP' à' substr(run_fmt_time,1,5)
-             retcode=6
+             '#'Dif_QXRFMIAP' à' substr(run_fmt_time,1,5)
+             retcode=3
           end
     End   /* End V12 feature */
     /*************************************/
@@ -3844,14 +4076,14 @@ CheckForAlert:
         do
            say 'Warning : No space to create Sparse Ix WF',
            '£'Dif_QXSISTOR' à' substr(run_fmt_time,1,5)
-           retcode=6
+           retcode=3
         end
     /* RiD list no workfile */
     if Dif_QXWFRIDS> 0     then
         do
            say 'Warning : RID goes to workfile, no storage RIDPOOL',
            '£'Dif_QXWFRIDS' à' substr(run_fmt_time,1,5)
-           retcode=6
+           retcode=3
         end
     /* Auth cache PLan  error */
     /*
@@ -3869,7 +4101,7 @@ CheckForAlert:
          ' à' substr(run_fmt_time,1,5),
          '£Bind attemps:'Dif_QTABINDA,
          '£Bind success:'Dif_QTABIND
-         retcode=6
+         retcode=3
        end
     if Dif_QTAUTOBA >Dif_QTPKABND   then
        do
@@ -3877,7 +4109,7 @@ CheckForAlert:
          ' à' substr(run_fmt_time,1,5),
          '£Bind attemps:'Dif_QTAUTOBA,
          '£Bind success:'Dif_QTPKABND
-         retcode=6
+         retcode=3
        end
     /* Drain Close  */
     if Dif_QTDSDRN  > 0 then
@@ -3885,7 +4117,7 @@ CheckForAlert:
                say 'Warning : Drain Close DSMAX reached. Close#:',
                Dif_QTDSDRN  '#Cur DS:' QTDSOPN,
                '@' substr(run_fmt_time,1,5)
-               retcode=6
+               retcode=3
              end
     /* Latch classes*/
     /* Put in stem for automatic processing */
@@ -3904,7 +4136,7 @@ CheckForAlert:
        do
          say 'Warning : Latch class' Lccl.i '> 1000/s',
          LCVal.i      ' à' substr(run_fmt_time,1,5)
-         retcode=6
+         retcode=3
        end
     end i
     /* 32k used 4k preferred */
@@ -3912,48 +4144,55 @@ CheckForAlert:
              do
                say 'Warning : Workfile - 32K used 4K preferred.',
                Dif_QISTWFP1 ' à' substr(run_fmt_time,1,5)
-               retcode=6
+               retcode=3
              end
     /* 4K  used 32K preferred */
     if Dif_QISTWFP2 > 0 then
              do
                say 'Warning : Workfile - 4K used 32K preferred.',
                Dif_QISTWFP2 ' à' substr(run_fmt_time,1,5)
-               retcode=6
+               retcode=3
              end
     /* Log Output Buffer unavailable */
     if Dif_QJSTWTB  > 0 then
              do
                say 'Warning : Wait - Log Output Buffer Unavail.',
                Dif_QJSTWTB  ' à' substr(run_fmt_time,1,5)
-               retcode=6
+               retcode=3
              end
     /* Log Output Buffer Page In     */
     if Dif_QJSTBPAG > 0 then
              do
                say 'Warning : Log Output Buffer Page In',
              Dif_QJSTBPAG   ' à' substr(run_fmt_time,1,5)
-               retcode=6
+               retcode=3
+             end
+    /* CTHREAD reached */
+    if Dif_Q3STCTHW > 0 then
+             do
+               say 'Warning : CTHREAD reached, Thread queued :',
+                  Dif_Q3STCTHW  ' à' substr(run_fmt_time,1,5)
+               retcode=3
              end
     /* MAXDBAT reached */
     if Dif_QDSTQDBT > 0 then
              do
                say 'Warning : MAXDBAT reached, DBAT queued :',
                   Dif_QDSTQDBT  ' à' substr(run_fmt_time,1,5)
-               retcode=6
+               retcode=3
              end
     if Dif_QDSTQCRT > 0 then
              do
                say 'Warning : CONDBAT reached, Conn rejected :',
                   Dif_QDSTQCRT ' à' substr(run_fmt_time,1,5)
-               retcode=6
+               retcode=3
              end
     if QDSTNQR2 > 0 & QDSTNQAV > 0.01 then
              do
                say 'Warning : Type2 queued too long,£:' !!,
                QDSTNQR2 ' à' substr(run_fmt_time,1,5) ,
                '- Avg wait:'QDSTNQAV
-               retcode=6
+               retcode=3
              end
     /* Global Dynamic Stmt cache hit ratio > 90% */
     if (Dif_QXSTFND+Dif_QXSTNFND) > 100 then do
@@ -4046,7 +4285,7 @@ CheckForAlert:
                say 'Warning : Page in for Read/Write happened',
                    ' à' substr(run_fmt_time,1,5) ,
                    Sum_QBSTRPI Sum_QBSTWPI,
-                   'SyncIO/s:' format(Sum_QBSTRIO/60,5,0)
+                   'SyncIO/s:' format(Sum_QBSTRIO/60,9,0)
                retcode=4
              end
  return
@@ -4124,3 +4363,82 @@ Arg TUNITS
   TSDate=substr(timestamp,1,10)
   TSTime=substr(timestamp,12,08)
   return
+ 
+AllocS01:
+   /* close file */
+   address TSO "EXECIO 0 DISKW OUFL (FINIS"
+   rcwrite = rc
+   if rcwrite<> 0 then Do
+      say "**********************************************"
+      say "   Error writting OUFL file: " rcwrite
+      say "   Abnormal end  AllocS01"
+      say "**********************************************"
+      Exit 8
+   end
+   /* Free */
+   "FREE DD(OUFL)"
+   oufl = "'" !! hlq !! '.reports.' !! ssid'.S02' !!  "'"
+   "DELETE" oufl "PURGE"
+   "ALLOC FI(OUFL) DA("oufl") NEW CATALOG REUSE" ,
+   "lrecl(1800) RECFM(V B) TRACKS SPACE(200,200)"
+   RcAlloc = rc
+   if RcAlloc <> 0 then Do
+        say "**********************************************"
+        say "   Error allocating report file" oufl  RcAlloc
+        say "   Abnormal end  AllocS01"
+        say "**********************************************"
+        Exit 8
+   end
+return
+AllocS02:
+   /* close file */
+   address TSO "EXECIO 0 DISKW OUFL (FINIS"
+   rcwrite = rc
+   if rcwrite<> 0 then Do
+      say "**********************************************"
+      say "   Error writting OUFL file: " rcwrite
+      say "   Abnormal end  AllocS02"
+      say "**********************************************"
+      Exit 8
+   end
+   /* Free */
+   "FREE DD(OUFL)"
+   oufl = "'" !! hlq !! '.reports.' !! ssid'.S03' !!  "'"
+   "DELETE" oufl "PURGE"
+   "ALLOC FI(OUFL) DA("oufl") NEW CATALOG REUSE" ,
+   "lrecl(1800) RECFM(V B) TRACKS SPACE(200,200)"
+   RcAlloc = rc
+   if RcAlloc <> 0 then Do
+        say "**********************************************"
+        say "   Error allocating report file" oufl  RcAlloc
+        say "   Abnormal end  AllocS02"
+        say "**********************************************"
+        Exit 8
+   end
+return
+AllocS03:
+   /* close file */
+   address TSO "EXECIO 0 DISKW OUFL (FINIS"
+   rcwrite = rc
+   if rcwrite<> 0 then Do
+      say "**********************************************"
+      say "   Error writting OUFL file: " rcwrite
+      say "   Abnormal end  AllocS03"
+      say "**********************************************"
+      Exit 8
+   end
+   /* Free */
+   "FREE DD(OUFL)"
+   oufl = "'" !! hlq !! '.reports.' !! ssid'.S04' !!  "'"
+   "DELETE" oufl "PURGE"
+   "ALLOC FI(OUFL) DA("oufl") NEW CATALOG REUSE" ,
+   "lrecl(1800) RECFM(V B) TRACKS SPACE(200,200)"
+   RcAlloc = rc
+   if RcAlloc <> 0 then Do
+        say "**********************************************"
+        say "   Error allocating report file" oufl  RcAlloc
+        say "   Abnormal end  AllocS03"
+        say "**********************************************"
+        Exit 8
+   end
+return
