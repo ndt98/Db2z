@@ -1,45 +1,3 @@
-
-Attachment 2022_02_14_19_39_22.pdf added.Conversation opened. 1 unread message. 
-
-Skip to content
-Using Gmail with screen readers
-Meet
-Hangouts
-
-4 of 8,931
-rex101
-Inbox
-
-NGUYEN Duc Tuan (CA-GIP)
-Attachments
-6:42 PM (1 hour ago)
-to Laurent, me
-
-
-
-
-Usage Interne
-
------Message d'origine-----
-De : WSYNGUDA_SYSA@ca-gip.fr <WSYNGUDA_SYSA@ca-gip.fr> De la part de SILCA_DBDC_DB2@CA-SILCA.FR Envoyé : lundi 14 février 2022 18:41 À : NGUYEN Duc Tuan (CA-GIP) <ductuan.nguyen@ca-gip.fr> Objet : Temp
-
-
-
-___________________________________________________________________________________________________
-Ce message et toutes les piÃ¨ces jointes (ci-aprÃ¨s le "Message") sont strictement confidentiels et sont Ã©tablis Ã  l'intention exclusive de ses destinataires.
-Si vous recevez ce message par erreur, merci de le dÃ©truire et d'en avertir immÃ©diatement l'expÃ©diteur par e-mail.
-Toute utilisation de ce message non conforme Ã  sa destination, toute modification, Ã©dition, ou diffusion totale ou partielle non autorisÃ©e est interdite. L'expÃ©diteur  dÃ©cline toute responsabilitÃ© au titre de ce Message s'il a Ã©tÃ© altÃ©rÃ©, dÃ©formÃ©, falsifiÃ© ou encore Ã©ditÃ© ou diffusÃ© sans autorisation.
-
-This  mail message and attachments (the "Message") are confidential and solely intended for the addressees.
-If you receive this message in error, please delete it and immediately notify the sende
- r by e-mail.
-Any  use  other than its intended purpose, review, retransmission, dissemination, either whole or partial is prohibited except  if  formal approval  is granted.
-The sender shall not be liable for the Message if altered, changed, falsified , retransmitted or disseminated.
-
-...
-
-[Message clipped]  View entire message
-Attachments area
 /*REXX*/
 totcpu=0
 /* Input file : SMF extract sorted */
@@ -1560,5 +1518,3 @@ GetTimeZone:
     tzo     = C2D(tzo,4)*1.048576
     tzo     = (tzo+.5)%1
     return
-rex101.txt
-Displaying rex101.txt.
