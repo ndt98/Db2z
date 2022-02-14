@@ -1,4 +1,47 @@
+
+Attachment 2022_02_14_19_39_22.pdf added.Conversation opened. 1 unread message. 
+
+Skip to content
+Using Gmail with screen readers
+Meet
+Hangouts
+
+4 of 8,931
+rex101
+Inbox
+
+NGUYEN Duc Tuan (CA-GIP)
+Attachments
+6:42 PM (1 hour ago)
+to Laurent, me
+
+
+
+
+Usage Interne
+
+-----Message d'origine-----
+De : WSYNGUDA_SYSA@ca-gip.fr <WSYNGUDA_SYSA@ca-gip.fr> De la part de SILCA_DBDC_DB2@CA-SILCA.FR Envoyé : lundi 14 février 2022 18:41 À : NGUYEN Duc Tuan (CA-GIP) <ductuan.nguyen@ca-gip.fr> Objet : Temp
+
+
+
+___________________________________________________________________________________________________
+Ce message et toutes les piÃ¨ces jointes (ci-aprÃ¨s le "Message") sont strictement confidentiels et sont Ã©tablis Ã  l'intention exclusive de ses destinataires.
+Si vous recevez ce message par erreur, merci de le dÃ©truire et d'en avertir immÃ©diatement l'expÃ©diteur par e-mail.
+Toute utilisation de ce message non conforme Ã  sa destination, toute modification, Ã©dition, ou diffusion totale ou partielle non autorisÃ©e est interdite. L'expÃ©diteur  dÃ©cline toute responsabilitÃ© au titre de ce Message s'il a Ã©tÃ© altÃ©rÃ©, dÃ©formÃ©, falsifiÃ© ou encore Ã©ditÃ© ou diffusÃ© sans autorisation.
+
+This  mail message and attachments (the "Message") are confidential and solely intended for the addressees.
+If you receive this message in error, please delete it and immediately notify the sende
+ r by e-mail.
+Any  use  other than its intended purpose, review, retransmission, dissemination, either whole or partial is prohibited except  if  formal approval  is granted.
+The sender shall not be liable for the Message if altered, changed, falsified , retransmitted or disseminated.
+
+...
+
+[Message clipped]  View entire message
+Attachments area
 /*REXX*/
+totcpu=0
 /* Input file : SMF extract sorted */
 /* This programs processes one Date/Lpar/SSID a time            */
 /* (at least in mode summary to calculate the accumulation)     */
@@ -35,7 +78,7 @@
 summary='N'
 arg ssid hlq SmfOrig ConnSel CorridSel PackFlag BPSel BPValSel
 say 'PackFlag'  PackFlag
-if PackFlag='P' then PackFlag=1
+if PackFlag='Y' then PackFlag=1
   else  PackFlag=0
 if ConnSel='' then ConnSel='ALL'
 if CorridSel=''   then CorridSel='ALL'
@@ -264,6 +307,7 @@ END /* Do forever */
 call report_ifcid
 /* report SMF records read by ssid */
 call ReportSMFDs
+Say '' ; say 'Totcpu=' totcpu ; say' '
 Say 'Output records Plan: ' reco + Sequence * 1000000
 Say 'Output records Package: ' reck
 EXIT rcalloc
@@ -564,7 +608,7 @@ DSNDQWAC: /* MAP ACCOUNTING DATA SECTION */
   /* QWACEJST DS XL8 ENDING TCB CPU TIME IN ALL ENVIRONMENTS */
   QWACEJST = C2X(SUBSTR(InpRec,ofs,8)) /*CONVERT INTO HEX VALUE*/
   QWACEJST = X2D(SUBSTR(QWACEJST,1,13)) /*ELIMINATE 1.5 BYTES */
-  TCB_TIME = (QWACEJST - QWACBJST)/1000000
+  tcbcpu = (QWACEJST - QWACBJST)/1000000
   /* Reason why Accounting cut
   QWACRINV=X2D(SUBSTR(InpRec,ofs,4)
   say 'QWACRINV' QWACRINV */
@@ -1022,6 +1066,7 @@ WRITE_REPORT:
         PctWait      = TotWait/QWACASCT*100
     end
     /* Rows in excel format */
+      totcpu=tcbcpu+totcpu
       queue sm101sid !! ',' !! sm101ssi !! ','  ,
       !! sm101dte !! ','   ,
       !! run_fmt_time !! ','   ,
@@ -1040,7 +1085,7 @@ WRITE_REPORT:
       !! strip(qwhcopid,'T')          !! ','   ,
       !! conntype          !! ','   ,
       !! elapsed_time     !! ','   , /* cl1 elapsed*/
-      !! tcb_time  !! ','   ,    /*cl1cpu*/
+      !! tcbcpu    !! ','   ,    /*cl1cpu*/
       !! QWACASCT  !! ','   ,    /*cl2 elap */
       !! QWACAJST  !! ','   ,    /*cl2cpu*/
       !! NotAccount!! ','   ,
@@ -1174,7 +1219,7 @@ process_summary:
    strip(qwhcplan)!!strip(jobn) <> strip(s_qwhcplan)!!strip(s_jobn)
    then do
        call write_summary
-       sm_tcb_time  =  tcb_time
+       sm_tcbcpu    =  tcbcpu
        sm_QWACAJST  =  QWACAJST
        sm_getp      =  getp
        sm_BufUpd    =  BufUpd
@@ -1195,7 +1240,7 @@ process_summary:
    end
    /*pas de rupture , on accumule les valeurs */
    else do
-          sm_tcb_time  =  tcb_time + sm_tcb_time
+          sm_tcbcpu    =  tcbcpu + sm_tcbcpu
           sm_QWACAJST  =  QWACAJST + sm_QWACAJST
           sm_getp      =  getp     + sm_getp
           sm_BufUpd    =  BufUpd   + sm_BufUpd
@@ -1237,7 +1282,7 @@ write_summary:
      !! s_jobn                !! ','   ,
      !! s_conntype          !! ','   ,
      !! occ                 !! ','   ,
-     !! sm_tcb_time  !! ','   ,
+     !! sm_tcbcpu    !! ','   ,
      !! sm_QWACAJST  !! ','   ,    /*cl2cpu*/
      !! sm_getp      !! ','   ,
      !! sm_syncio    !! ','   ,
@@ -1258,7 +1303,7 @@ write_summary:
    return
  
 init_sum:
-   sm_tcb_time = 0
+   sm_tcbcpu = 0
    sm_QWACAJST = 0
    sm_getp     = 0
    sm_BufUpd   = 0
@@ -1515,3 +1560,5 @@ GetTimeZone:
     tzo     = C2D(tzo,4)*1.048576
     tzo     = (tzo+.5)%1
     return
+rex101.txt
+Displaying rex101.txt.
